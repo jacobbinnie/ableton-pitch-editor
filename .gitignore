@@ -24,3 +24,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Private clip edit recovery documents
+/.pitch-state/

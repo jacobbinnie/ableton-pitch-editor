@@ -9,4 +9,12 @@ int main(){
  assert(*sourceTime(4,true,p)==3);assert(*sourceTime(2.5,false,{})==2.5);
  assert(!sourceTime(1,true,{}));assert(!sourceTime(1,true,{{0,0},{0,1}}));
  assert(!sourceTime(NAN,false,{}));
+ for(double beat:{-2.,0.,1.,4.,6.,10.})assert(std::abs(*sourceBeat(*sourceTime(beat,true,p),p)-beat)<1e-9);
+ assert(!sourceBeat(2,{{0,0},{4,3},{8,2}}));assert(!sourceBeat(NAN,p));
+ assert(*seekBeat(2,p,10,18,1,false,0,0,10)==11);
+ assert(!seekBeat(0,p,10,18,1,false,0,0,10));
+ assert(*seekBeat(2,p,10,24,1,true,0,4,20)==19);
+ assert(*seekBeat(1,p,10,24,1,true,0,4,10)==13);
+ assert(!seekBeat(4,p,10,24,1,true,0,4,10));
+ assert(!seekBeat(2,p,10,10,1,false,0,0,10));
 }

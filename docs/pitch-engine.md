@@ -1,5 +1,7 @@
 # Pitch editor core — first implementation
 
+Historical implementation notes. See [the audio engine plan](audio-engine-plan.md) for the next phase and [native integration status](native-tab-working.md) for the current UI.
+
 The C++ core consumes normalized mono PCM and returns source-time pitch frames
 and note segments. It has no Ableton addresses, GUI dependencies, or host APIs.
 The `Document` model stores pitch offsets separately from detected pitches and
@@ -18,7 +20,7 @@ Confidence is a periodicity score, not a calibrated probability.
 
 Segmentation preserves source seconds, rejects runs shorter than 60 ms, and
 requires three consecutive frames beyond 0.8 semitones from an onset anchor
-before splitting a voiced run. The original contour stays available for visual
+before splitting a voiced run. Revision 28 additionally requires more than 0.5 semitone local movement over up to three hops, so a gradual slide alone does not trigger a split. The original contour stays available for visual
 assessment. Smoothing, breath-gap bridging, repeated-note onset detection,
 manual splitting/merging, and robust handling of portamento remain future work.
 Leading/trailing analysis-window margins are not extrapolated to clip edges.

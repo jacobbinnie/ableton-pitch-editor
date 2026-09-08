@@ -1,6 +1,6 @@
 # Local Development Setup
 
-- Build the working native adapter with `python3 scripts/build_native.py`; load `Native Pitch Editor.amxd` with `pitchnative20.mxo` beside it in the experimental app. The native copy must already have the resource tab. The build checks its executable hash. The read-only probe and 20-second mount test are optional research tools, not additional required devices.
+- Build the working native adapter with `python3 scripts/build_native.py`; load `Native Pitch Editor.amxd` with the versioned `.mxo` named by `scripts/build_native.py` beside it in the experimental app. The native copy must already have the resource tab. The build checks its executable hash. The read-only probe and 20-second mount test are optional research tools, not additional required devices.
 
 - This project must have its own `.git` directory. Before initialization, Git walked upward into `~/.git`, exposing unrelated home-directory changes. Always verify `git rev-parse --show-toplevel` equals this project before staging or committing; never stage the parent repository. App copies and extracted resources stay under ignored `build/`.
 
@@ -20,3 +20,9 @@
 - Preferred varied-note audio fixture: `fixtures/local/track-3-vocal-pitch-demo.wav` (track 3 recording, copied with its .asd outside build/). Use it for editor demos; the current detector produced 10 segments. Audio is Git-ignored and must be supplied separately on another machine.
 
 - When changing PitchCanvas while Live remains running, rename the Objective-C class too (the native build uses -DPitchCanvas=PitchCanvas14). Renaming only the Max external leaves the old Objective-C implementation registered. Viewport tests run via scripts/build_editor.py alongside the existing core tests.
+
+- Local renderer: fetch the checksum-pinned Rubber Band 4.0.0 source with scripts/fetch_rubberband.py, then run scripts/build_render.py. The single compilation unit needs Accelerate on macOS. Dependency source and linked binaries are ignored; this local experiment does not establish distribution licensing. CLI refuses existing output paths; use fresh names when rerunning examples.
+
+- Missing-tab recovery observed with revision 20: the resource PitchEditorButton remained in AX and the Native Pitch Editor device was present, but PitchEditor.Toggle was absent. Removing only that adapter device and reopening build/Native Pitch Editor.amxd restored the toggle and 10-note canvas. Presence of the device alone does not establish an attached tab; root cause is not yet established. Modern builds restore committed edits through the same-session document store; back up `.pitch-state/` before replacing the adapter.
+
+- Revision 22 native builds additionally require vendor/rubberband-4.0.0 (fetch script) and compile its single unit with Accelerate. Rename PitchRenderSession as well as PitchCanvas/Max classes during in-process reloads. Current scripts/build_render.py runs offline, streaming and expression-audio tests without opening an audio output device.

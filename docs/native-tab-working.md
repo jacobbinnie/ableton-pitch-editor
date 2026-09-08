@@ -1,3 +1,5 @@
+> Current audio workflow: [revision 24 streams edits during Live playback and auditions drags in memory](live-audio.md). Earlier export controls described below are superseded.
+
 # Experimental native Pitch Editor tab
 
 ## Verified implementation
@@ -183,3 +185,12 @@ Verified in Live with the track 3 recording: full 0–5.18s view, zoom and pan t
 1.90–4.20s, then Fit. Screenshot: build/research/pitch-waveform.jpg.
 Core peak boundary, impulse, tail and silence tests pass, along with existing
 core/viewport/playback checks and both native and standalone builds.
+
+## Audio render controls (revision 22)
+
+Committed note edits now render through a serial background session. The footer
+adds Original/Edited audition and Show File, with waiting/rendering/ready/error
+feedback. Undo invalidates old render access and redo regenerates it. Source-time
+audition requires Live stopped and is separate from Live's device chain/warp.
+See audio-renderer.md for verified behavior and remaining Apply/persistence work.
+Screenshot: build/research/pitch-native-audio-rendering.jpg.

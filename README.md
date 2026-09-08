@@ -4,21 +4,57 @@ Target experience: double-click an audio clip in Live, open its existing bottom 
 
 ## Current implementation status
 
-**The experimental Pitch Editor tab now opens editable pitch notes inside the native audio Clip View. Audio rendering remains unimplemented.**
+**The experimental Pitch Editor tab edits notes inside native audio Clip View. Revision 24 processes the track audio during Live playback; clicking or dragging notes auditions them from memory, including during playback. No export, Apply, or render-file step is required.**
 
-Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative20.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
+See [live audio behavior and limitations](docs/live-audio.md).
+
+See [audio renderer build, usage and validation](docs/audio-renderer.md) and [the engine implementation plan](docs/audio-engine-plan.md).
+
+Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative39.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
 
 The adapter creates `APlatformViewHost` children inside the existing native tab button and `LWarpedAudioTimelineEditor`. Live supplies actual `TPlatformViewContainer` surfaces for an AppKit toggle and pitch canvas. It does not create a floating window or position an unrelated NSView over the main app. The mode is local to this experimental adapter; Live's internal three-mode enum is unchanged. A Max device provides the loader and selected-clip file lookup.
 
-Verified: tab activation; 18 segments from the selected vocal; note 1 changing +1 → 0 → +1 through edit/undo/redo; edits retained when toggling the pitch tab; canvas removed when leaving Clip View. Pointer dragging is implemented but this native adapter's drag test was blocked by the computer-use tool's `noWindowsAvailable` error; keyboard editing was verified instead. See [the working native view](build/research/native-pitch-editor-working.jpg) and [implementation details](docs/native-tab-working.md).
+Verified: tab activation; 18 segments from the selected vocal; note 1 changing +1 → 0 → +1 through edit/undo/redo; edits retained when toggling the pitch tab; canvas removed when leaving Clip View. Revision 24 additionally verified dragging note 2 to +2 semitones, successful in-memory audition startup, and nonzero pitch processing during repeated Live playback loops. See [the working native view](build/research/native-pitch-editor-working.jpg) and [implementation details](docs/native-tab-working.md).
 
-Remaining: audible pitch rendering/application, crop and warp mapping, synchronization with native horizontal zoom/scroll, detection quality, proper Pitch footer controls, host undo/Set persistence, and broader lifecycle tests. The canvas currently fits the entire source file; it must not be presented as aligned to arbitrary cropped/warped/zoomed clips. Leaving Clip View or changing clips currently discards the temporary edit model. The stock choir exposes octave errors and is not a vocal-quality benchmark.
+Remaining: precise processing-boundary alignment, Session/unwarped playback support, synchronization with native horizontal zoom/scroll, detection quality, proper Pitch footer controls, host undo/Set persistence, and broader lifecycle tests. The canvas currently fits the entire source file; it must not be presented as aligned to arbitrary cropped/warped/zoomed clips. Leaving Clip View or changing clips currently discards the temporary edit model. The stock choir exposes octave errors and is not a vocal-quality benchmark.
 
 The original app and both Live executables remain unchanged. The experimental copy contains the [resource-only native tab addition](docs/native-tab-resource.md); proprietary copies and generated artifacts stay in ignored `build/`.
 
 The source waveform appears behind the pitch notes and stays aligned with the editor’s time zoom and pan.
 
 The editor shows an Envelopes-style thin playback cursor. It follows Live’s Follow switch for paging through the pitch viewport. Manual navigation suspends following until playback restarts or Follow changes. Verified on track 3, including loop restart, stop, and Follow on/off.
+
+### Detection validation
+
+The [39-case detector benchmark](benchmarks/README.md) now measures pitch, voicing, octave errors and note matching. Revision 28 fixes fragmentation of the tested gradual slide while preserving the other fixture matches. This is synthetic evidence; real-vocal validation remains outstanding. Build revision 28 with `scripts/build_native.py`; a running older revision keeps its existing detector until reloaded.
+
+### Playback cursor
+
+Click empty space or the inner ruler to position playback. Dragging the ruler still pans; clicking notes selects/auditions them. Revision 31 maps source seconds through warp/crop/loop metadata to Live’s transport. While stopped it also sets the next playback start. Verified in Live with existing edits retained after device reload.
+
+### Edit retention
+
+Revision 30 retains separate clip documents and writes local edit recovery data on commit. Switching views keeps undo history; reloading the adapter can restore note edits within the same Live session. This is not saved-Set persistence. See [scope and validation](docs/edit-retention.md). Earlier running revisions still hold only temporary edits.
+
+### Region edges and removal
+
+Drag a note’s left or right edge to expand or shorten its pitch region. Select a note and press Delete, or use **Remove Pitch Region** in its context menu. Audio remains in place; the removed region stops receiving a pitch edit. Regions cannot overlap, and each edge drag/removal is undoable. Revision 34 is loaded and verified in Live.
+
+### Manual note correction
+
+Revision 29 adds a note context menu: **Split Note Here** divides the note at the clicked time; **Join with Next Note** combines touching notes with matching pitch offsets. Splits preserve pitch edits and recompute each region’s detected center. Both actions support undo/redo and update live processing. Joining is disabled across gaps or differing pitch edits.
+
+### Snap
+
+The bottom-right **Snap** toggle controls vertical dragging: on snaps to semitone rows; off allows continuous pitch movement. It defaults on and remembers your preference. Shift-drag always provides slower cents adjustment. Toggling Snap never quantizes existing edits.
+
+### Fine pitch
+
+Shift-drag adjusts pitch in cents (one cent per vertical screen point). Option-Up/Down nudges one cent; normal dragging snaps the destination to exact semitone rows; Up/Down transposes in semitone steps. The footer shows the estimated destination note, deviation in cents, and total transposition. Changes feed live processing and audition with local undo/redo.
+
+### Editing UX
+
+Revision 25 uses direct vertical note dragging, a compact pitch readout, and an estimated contour that follows edited notes. Full navigation help lives in the tooltip. Opening Pitch selects Live’s Sample base view before attaching the canvas, removing unrelated envelope device/parameter controls. Returning to Envelopes restores its normal controls. Double-clicking a note no longer unexpectedly fits the viewport.
 
 ### Navigation
 
@@ -120,3 +156,19 @@ recreate the experimental application. The SDK is obtained separately and
 retains its own license. No project license or GitHub remote has been selected.
 
 Compare native owner snapshots with `python3 scripts/analyze_probe.py`. See [runtime integration evidence](docs/native-pitch-integration-path.md#runtime-owner-proof-8-september-2026) for verified owner fields and remaining attachment work.
+
+### Per-note gain
+
+Select a note, then drag the small round Gain handle beneath it up/down. Shift-drag gives finer control; double-click resets to 0 dB. Range: −24 to +12 dB. Changes affect Live playback and note audition immediately, scale the displayed source waveform, and support local undo/redo and same-session recovery. Positive gain can exceed output headroom; this is manual gain, not normalization or limiting.
+
+### Vibrato reduction (experimental)
+
+Select a note and drag the round Vibrato handle above it downward to reduce fast pitch variation. 100% preserves the original; 0% requests maximum reduction. Shift-drag is finer; double-click resets to 100%. The estimated contour updates while dragging. Playback and audition now share the Rubber Band processor and correction curve, while audition still uses the Mac output independently of Live's effects.
+
+Reduction keeps the estimated pitch center and local linear drift, and skips uncertain/unvoiced runs or runs shorter than 300 ms. This is a variation reducer, not a complete vibrato classifier: it can also affect fast ornamentation. 0% is a requested amount, not a promise of a perfectly flat audible result. Synthetic rendered tests at 4–8 Hz show approximately 35–60% depth reduction; real annotated vocal and listening validation remain necessary. Manual drift handles are available below; formant editing is not implemented yet.
+
+### Start/end pitch drift (experimental)
+
+The upper-left and upper-right handles adjust the beginning and end of the selected note in cents, with its midpoint anchored. Drag up to raise, down to lower; Shift-drag is finer, and double-click either handle resets that side to zero. The upper middle handle remains Vibrato. Drift is manual contour shaping, not automatic drift detection or a percentage-based correction control.
+
+Each side supports ±200 cents and composes with pitch, vibrato and gain edits through the shared live/audition engine. Reliable voiced runs under 300 ms and uncertain/unvoiced sections are skipped, with 40 ms edge tapers. Changes update the estimated contour immediately and support local undo/recovery. Resize reinterprets drift relative to the new bounds; reset drift before splitting/joining, because those operations would change its midpoint/shape. Source audio is not rewritten.

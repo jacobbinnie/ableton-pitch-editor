@@ -14,11 +14,30 @@
 #include "ext_dictobj.h"
 #include "ext_dictionary.h"
 #include "pitch_playback.hpp"
+#include "pitch_stream.hpp"
+#include "z_dsp.h"
+#import "pitch_render_session.hpp"
+#import "pitch_document_store.hpp"
+#import <CommonCrypto/CommonDigest.h>
 
 extern "C" void pitch_call_factory(void*,void**);
 static uintptr_t slide;
 static t_class *klass;
-struct NativeObject {t_object ob; void *outlet; void *request; void *playOutlet; void *playRequest; bool warped,playing; bool arrangement,songPlaying,looping,muted; double songBeat,clipStart,clipEnd,startMarker,loopStart,loopEnd;};
+struct StreamRuntime {
+    std::unique_ptr<pitch::StreamShifter> shifter;
+    std::atomic<double> beat{0},samplesPerBeat{22050};
+    std::atomic<bool> running{false};
+    std::atomic<unsigned> stamp{0};
+    std::atomic<double> lastShift{0},lastBeat{0};
+    std::atomic<unsigned long> blocks{0},shiftedBlocks{0};
+    unsigned lastStamp=0;double position=0,rate=44100;
+};
+static pitch::StreamStateStore streamStore;
+static std::vector<pitch::Note> streamNotes;
+static std::vector<pitch::Frame> streamFrames;
+static std::shared_ptr<const pitch::ExpressionCurve> streamExpression;
+static void updateExpression(){streamExpression=std::make_shared<const pitch::ExpressionCurve>(pitch::expressionCurve(streamFrames,streamNotes));}
+struct NativeObject {t_pxobject ob; StreamRuntime *rt; long ownerTrack,clipTrack,detailClipId,songId,analyzedClipId,analyzedSongId; void *outlet; void *request; void *playOutlet; void *playRequest; bool warped,playing; bool arrangement,songPlaying,looping,muted; double songBeat,clipStart,clipEnd,startMarker,loopStart,loopEnd;};
 static NativeObject *instance;
 static NSTimer *timer,*playTimer;
 static std::vector<pitch::WarpPoint> warpPoints;
@@ -47,9 +66,9 @@ static void drawTab(NSString *title,NSRect rect,BOOL selected){
     NSSize text=[title sizeWithAttributes:attrs];
     [title drawAtPoint:NSMakePoint(round(NSMidX(rect)-text.width/2),round(NSMidY(rect)-text.height/2)) withAttributes:attrs];
 }
-@interface PitchTabButton20 : NSButton
+@interface PitchTabButton39 : NSButton
 @end
-@implementation PitchTabButton20
+@implementation PitchTabButton39
 - (void)drawRect:(NSRect)rect {drawTab(self.title,self.bounds,self.state==NSControlStateValueOn);}
 - (void)setState:(NSControlStateValue)value {[super setState:value];self.needsDisplay=YES;}
 @end
@@ -57,6 +76,9 @@ static NSButton *tabButton;
 static uint32_t savedSelectedBackground,savedSelectedText;
 static bool selectorColorsOverridden;
 static PitchCanvas *canvas;
+static PitchRenderSession *renderSession;
+static PitchDocumentStore *documentStore;
+static NSString *liveSessionIdentity;
 static uintptr_t selectedEditor,selectedClip,buttonOwner;
 static NSRect tabFrame;
 static bool pitchMode;
@@ -125,7 +147,7 @@ static uintptr_t findSelector(){
     return 0;
 }
 static void closePitch(){
-    pitchMode=false;++generation;
+    pitchMode=false;++generation;[renderSession stop];
     [canvas removeFromSuperview];releaseHost(&canvasHost);
     // A retained native reference remains valid through header teardown.
     uintptr_t selector=(uintptr_t)selectorOwner;
@@ -138,21 +160,43 @@ static void closePitch(){
     tabButton.state=NSControlStateValueOff;
     log(@"Pitch mode closed");
 }
-@interface PitchNativeActions20 : NSObject
+static void tick();
+@interface PitchNativeActions39 : NSObject
 - (void)toggle:(id)sender;
+- (void)openPitch;
 @end
-static PitchNativeActions20 *actions;
-@implementation PitchNativeActions20
+static PitchNativeActions39 *actions;
+@implementation PitchNativeActions39
 - (void)toggle:(id)sender {
     (void)sender;
     if(pitchMode){closePitch();return;}
+    // Use Live's own Sample tab to remove unrelated envelope controls before mounting.
+    uintptr_t selector=findSelector();NSWindow *window=tabButton.window;
+    if(selector&&window&&buttonOwner){
+        NSSize buttonSize=sizeOf(buttonOwner),selectorSize=sizeOf(selector);
+        uintptr_t border=word(buttonOwner+0x60);
+        uint64_t bp=word(buttonOwner+0x30),rp=word(border+0x30),sp=word(selector+0x30);
+        CGFloat scale=buttonSize.width>0?tabFrame.size.width/buttonSize.width:1;
+        CGFloat dx=(int32_t)sp-(int32_t)rp-(int32_t)bp;
+        CGFloat dy=(int32_t)(sp>>32)-(int32_t)(rp>>32)-(int32_t)(bp>>32);
+        NSPoint screen=NSMakePoint(NSMinX(tabFrame)+(dx+selectorSize.width*.2)*scale,NSMaxY(tabFrame)-(dy+selectorSize.height*.5)*scale);
+        NSPoint point=[window convertPointFromScreen:screen];
+        for(NSNumber *kind in @[@(NSEventTypeLeftMouseDown),@(NSEventTypeLeftMouseUp)]){
+            NSEvent *event=[NSEvent mouseEventWithType:(NSEventType)kind.integerValue location:point modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:1];
+            [NSApp sendEvent:event];
+        }
+    }
+    dispatch_async(dispatch_get_main_queue(),^{tick();if(instance)[self openPitch];});
+}
+- (void)openPitch {
+    if(pitchMode)return;
     if(!tableIs(selectedEditor,0x106b4d2a0))return;
     NSSize size=sizeOf(selectedEditor);
     canvasHost=makeHost(selectedEditor,size.width,size.height);
     NSView *container=nativeView(canvasHost);
     if(!container){log(@"Pitch canvas attachment failed");return;}
     if(!canvas){canvas=[[PitchCanvas alloc] initWithFrame:container.bounds];analyzed=false;}
-    canvas.frame=container.bounds;canvas.embeddedTimeline=YES;
+    canvas.frame=container.bounds;canvas.embeddedTimeline=YES;[canvas enableAudioControls];
     canvas.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     canvas.accessibilityIdentifier=@"PitchEditor.Notes";
     [container addSubview:canvas];pitchMode=true;++generation;
@@ -200,7 +244,7 @@ static void tick(){
     for(NSWindow *w in NSApp.windows){int budget=5000;scan(w,0,&budget,&editor,&button,&frame);}
     if(!tableIs(editor,0x106b4d2a0)){if(pitchMode)closePitch();selectedEditor=0;return;}
     uintptr_t clip=word(editor+0x390);
-    if(editor!=selectedEditor||clip!=selectedClip){if(pitchMode)closePitch();canvas=nil;analyzed=false;selectedEditor=editor;selectedClip=clip;}
+    if(editor!=selectedEditor||clip!=selectedClip){if(pitchMode)closePitch();[renderSession invalidate];renderSession=nil;canvas=nil;analyzed=false;selectedEditor=editor;selectedClip=clip;}
     tabFrame=frame;
     if(button&&button!=buttonOwner){
         [tabButton removeFromSuperview];tabButton=nil;releaseHost(&tabHost);buttonOwner=button;
@@ -208,7 +252,7 @@ static void tick(){
             NSSize size=sizeOf(button);tabHost=makeHost(button,size.width,size.height);
             NSView *container=nativeView(tabHost);
             if(container){
-                tabButton=[PitchTabButton20 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
+                tabButton=[PitchTabButton39 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
                 tabButton.frame=container.bounds;tabButton.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
                 tabButton.bordered=NO;tabButton.buttonType=NSButtonTypePushOnPushOff;
                 tabButton.font=tabFont();
@@ -218,6 +262,43 @@ static void tick(){
         } else log([NSString stringWithFormat:@"Unexpected tab owner %@",type(button)]);
     }
     if(pitchMode){NSSize size=sizeOf(editor);resizeHost(canvasHost,size.width,size.height);}
+}
+static void publishStream(){
+    if(!instance)return;
+    auto *x=instance;pitch::StreamState state;
+    state.expression=streamExpression;state.notes=streamNotes;state.warp=warpPoints;state.start=x->clipStart;state.end=x->clipEnd;state.marker=x->startMarker;
+    state.loop=x->looping;state.loopStart=x->loopStart;state.loopEnd=x->loopEnd;
+    state.enabled=analyzed&&x->analyzedClipId>0&&x->analyzedClipId==x->detailClipId&&x->analyzedSongId==x->songId&&x->arrangement&&x->warped&&!x->muted&&x->ownerTrack>0&&x->ownerTrack==x->clipTrack;
+    static unsigned report=0;
+    if(x->rt->running.load()&&report++%30==0&&report<900)log([NSString stringWithFormat:@"STREAM enabled=%d own=%ld clip=%ld beat=%.3f shift=%.2f blocks=%lu shifted=%lu",state.enabled,x->ownerTrack,x->clipTrack,x->rt->lastBeat.load(),x->rt->lastShift.load(),x->rt->blocks.load(),x->rt->shiftedBlocks.load()]);
+    streamStore.publish(std::move(state));
+}
+static void hostBeat(NativeObject *x,double value){x->rt->beat.store(value);++x->rt->stamp;}
+static void hostTempo(NativeObject *x,double value){if(value>0)x->rt->samplesPerBeat.store(value);}
+static void hostRun(NativeObject *x,long value){x->rt->running.store(value!=0);}
+static void ownTrack(NativeObject *x,long value){x->ownerTrack=value;}
+static void clipTrack(NativeObject *x,long value){x->clipTrack=value;}
+static void clipIdentity(NativeObject *x,long value){x->detailClipId=value;}
+static void songIdentity(NativeObject *x,long value){x->songId=value;}
+static void performAudio(NativeObject *x,t_object*,double **ins,long,double **outs,long,long frames,long,void*){
+    auto *r=x->rt;if(!r->shifter){for(long c=0;c<2;++c)std::copy(ins[c],ins[c]+frames,outs[c]);return;}
+    unsigned stamp=r->stamp.load();if(stamp!=r->lastStamp){r->position=r->beat.load();r->lastStamp=stamp;}
+    const auto *state=streamStore.acquire();
+    double shift=state&&r->running.load()?state->shiftAt(r->position):0;
+    double gain=state&&r->running.load()?state->gainAt(r->position):1;
+    r->lastShift.store(shift);r->lastBeat.store(r->position);++r->blocks;if(std::abs(shift)>.01)++r->shiftedBlocks;
+    for(long offset=0;offset<frames;offset+=64){
+        double beat=r->position+offset/r->samplesPerBeat.load();
+        if(state&&r->running.load()){shift=state->shiftAt(beat);gain=state->gainAt(beat);}
+        bool expressive=state&&state->enabled&&r->running.load()&&state->expression&&!state->expression->empty();
+        r->shifter->process(ins[0]+offset,ins[1]+offset,outs[0]+offset,outs[1]+offset,(std::size_t)std::min(64L,frames-offset),shift,gain,expressive);
+    }
+    streamStore.release();
+    if(r->running.load())r->position+=frames/r->samplesPerBeat.load();
+}
+static void configureDSP(NativeObject *x,t_object *dsp,short*,double rate,long,long){
+    x->rt->rate=rate;x->rt->shifter=std::make_unique<pitch::StreamShifter>(rate);
+    object_method(dsp,gensym("dsp_add64"),x,performAudio,0,nullptr);
 }
 static void requestClip(NativeObject *x){if(x==instance)outlet_bang(x->outlet);}
 static void requestPlayback(NativeObject *x){if(x==instance)outlet_bang(x->playOutlet);}
@@ -242,7 +323,7 @@ static void playbackState(NativeObject *x,t_symbol*,long argc,t_atom *argv){
     if(argc<2)return;const char *key=atom_getsym(argv)->s_name;double v=atom_getfloat(argv+1);
     if(!strcmp(key,"follow")){BOOL follow=v!=0;dispatch_async(dispatch_get_main_queue(),^{canvas.followPlayback=follow;});}
     else if(!strcmp(key,"is_arrangement_clip"))x->arrangement=v!=0;
-    else if(!strcmp(key,"songplaying"))x->songPlaying=v!=0;
+    else if(!strcmp(key,"songplaying")){x->songPlaying=v!=0;}
     else if(!strcmp(key,"songtime"))x->songBeat=v;
     else if(!strcmp(key,"start_time"))x->clipStart=v;
     else if(!strcmp(key,"end_time"))x->clipEnd=v;
@@ -262,52 +343,84 @@ static void playbackPosition(NativeObject *x,double beat){
     }
     auto seconds=pitch::sourceTime(beat,x->warped,warpPoints);BOOL playing=running;bool valid=seconds.has_value();double time=seconds.value_or(0);
     static int debugCount=0;if(debugCount++<120&&debugCount%30==0)log([NSString stringWithFormat:@"PLAYPOS source=%.3f running=%d arrangement=%d song=%.3f start=%.3f marker=%.3f",time,playing,x->arrangement,x->songBeat,x->clipStart,x->startMarker]);
-    dispatch_async(dispatch_get_main_queue(),^{if(pitchMode)[canvas setPlayheadSeconds:time playing:playing valid:valid];});
+    dispatch_async(dispatch_get_main_queue(),^{publishStream();if(pitchMode)[canvas setPlayheadSeconds:time playing:playing valid:valid];});
 }
-static void readAudio(NativeObject*,t_symbol*,long argc,t_atom *argv){
+static void readAudio(NativeObject *x,t_symbol*,long argc,t_atom *argv){
     if(argc<1||atom_gettype(argv)!=A_SYM)return;
     NSString *path=[NSString stringWithUTF8String:atom_getsym(argv)->s_name];
     dispatch_async(dispatch_get_main_queue(),^{
-        if(!pitchMode)return;
+        if(!pitchMode||x!=instance||x->detailClipId<=0||x->songId<=0)return;
+        long clipId=x->detailClipId,songId=x->songId;uintptr_t nativeClip=selectedClip;
+        if(word(selectedEditor+0x390)!=nativeClip)return;
+        NSString *identity=[NSString stringWithFormat:@"%@:%ld:%ld",liveSessionIdentity,songId,clipId];
         NSUInteger ticket=generation;PitchCanvas *target=canvas;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{@autoreleasepool {
             NSError *error=nil;AVAudioFile *file=[[AVAudioFile alloc] initForReading:[NSURL fileURLWithPath:path] error:&error];
-            std::shared_ptr<pitch::Analysis> result;
+            std::shared_ptr<pitch::Analysis> result;NSString *sourceHash=nil;
+            auto source=std::make_shared<pitch::AudioAsset>();
             double sr=file.processingFormat.sampleRate;
             if(file&&sr>=8000&&sr<=48000&&file.length>0&&file.length/sr<=60&&file.processingFormat.channelCount<=2){
                 AVAudioPCMBuffer *buffer=[[AVAudioPCMBuffer alloc] initWithPCMFormat:file.processingFormat frameCapacity:(AVAudioFrameCount)file.length];
                 if([file readIntoBuffer:buffer error:&error]&&buffer.floatChannelData){
                     unsigned bestChannel=0;double bestEnergy=-1;
                     for(unsigned c=0;c<buffer.format.channelCount;c++){double sum=0,energy=0;for(unsigned i=0;i<buffer.frameLength;i++){double v=buffer.floatChannelData[c][i];sum+=v;energy+=v*v;}energy-=sum*sum/buffer.frameLength;if(energy>bestEnergy){bestEnergy=energy;bestChannel=c;}}
+                    source->sampleRate=sr;
+                    for(unsigned c=0;c<buffer.format.channelCount;++c)source->channels.emplace_back(buffer.floatChannelData[c],buffer.floatChannelData[c]+buffer.frameLength);
                     std::vector<float> mono(buffer.floatChannelData[bestChannel],buffer.floatChannelData[bestChannel]+buffer.frameLength);
                     try{result=std::make_shared<pitch::Analysis>(pitch::analyze(mono,sr));}catch(...){}
+                    NSData *sourceBytes=[NSData dataWithContentsOfFile:path];
+                    if(sourceBytes){unsigned char digest[CC_SHA256_DIGEST_LENGTH];CC_SHA256(sourceBytes.bytes,(CC_LONG)sourceBytes.length,digest);NSMutableString *hash=[NSMutableString new];for(auto byte:digest)[hash appendFormat:@"%02x",byte];sourceHash=hash;}
                 }
             }
             dispatch_async(dispatch_get_main_queue(),^{
-                if(ticket!=generation||!pitchMode||canvas!=target)return;
-                if(result){auto count=result->notes.size();[target setAnalysis:std::move(*result)];analyzed=true;[target.window makeFirstResponder:target];log([NSString stringWithFormat:@"ANALYZED %@ notes=%lu",path.lastPathComponent,(unsigned long)count]);}
+                if(ticket!=generation||!pitchMode||canvas!=target||instance!=x||x->detailClipId!=clipId||x->songId!=songId||word(selectedEditor+0x390)!=nativeClip)return;
+                if(result){auto count=result->notes.size();streamFrames=result->frames;
+                    if(sourceHash)[target setDocument:[documentStore open:std::move(*result) identity:identity sourceHash:sourceHash]];
+                    else [target setAnalysis:std::move(*result)];
+                    x->analyzedClipId=clipId;x->analyzedSongId=songId;
+                    [renderSession invalidate];renderSession=[[PitchRenderSession alloc] initWithAudio:source frames:streamFrames];
+                    __weak PitchCanvas *weakCanvas=target;__weak PitchRenderSession *weakSession=renderSession;
+                    renderSession.statusChanged=^(NSString *status,BOOL ready){[weakCanvas setAudioStatus:status ready:ready];if(ready)log(@"NOTE AUDITION started");};
+                    target.editCommitted=^(std::vector<pitch::Note> notes){streamNotes=std::move(notes);updateExpression();publishStream();};
+                    target.cursorRequested=^(double seconds){
+                        if(instance!=x||x->detailClipId!=clipId||x->songId!=songId||!x->arrangement||!x->warped)return;
+                        auto beat=pitch::seekBeat(seconds,warpPoints,x->clipStart,x->clipEnd,x->startMarker,x->looping,x->loopStart,x->loopEnd,x->songBeat);
+                        if(!beat){[weakCanvas setAudioStatus:@"Position is outside this clip’s playback range" ready:NO];return;}
+                        t_atom value;atom_setfloat(&value,*beat);
+                        outlet_anything(x->playOutlet,gensym("seek"),1,&value);
+                        if(!x->songPlaying)outlet_anything(x->playOutlet,gensym("seekstart"),1,&value);
+                        [weakCanvas setPlayheadSeconds:seconds playing:x->songPlaying valid:YES];
+                    };
+                    target.documentCommitted=^(std::shared_ptr<pitch::Document> document){if(sourceHash)[documentStore save:document identity:identity sourceHash:sourceHash];};
+                    target.noteAudition=^(pitch::Note note,BOOL finished){if(finished)[weakSession finishAudition];else [weakSession auditionNote:note];};
+                    streamNotes=[target noteSnapshot];updateExpression();analyzed=true;publishStream();[target setAudioStatus:@"Live pitch editing • Drag notes to audition" ready:YES];[target.window makeFirstResponder:target];log([NSString stringWithFormat:@"ANALYZED %@ notes=%lu",path.lastPathComponent,(unsigned long)count]);}
                 else log([NSString stringWithFormat:@"ANALYSIS FAILED %@",error.localizedDescription?:@"unsupported audio"]);
             });
         }});
     });
 }
 static void dispose(NativeObject *x){
+    dsp_free(&x->ob);delete x->rt;x->rt=nullptr;
     if(x->request)qelem_free(x->request);
     if(x->playRequest)qelem_free(x->playRequest);
     if(instance!=x)return;instance=nullptr;
     dispatch_async(dispatch_get_main_queue(),^{
-        [timer invalidate];timer=nil;[playTimer invalidate];playTimer=nil;closePitch();canvas=nil;[tabButton removeFromSuperview];tabButton=nil;releaseHost(&tabHost);buttonOwner=0;
+        [documentStore flush];documentStore=nil;[timer invalidate];timer=nil;[playTimer invalidate];playTimer=nil;closePitch();[renderSession invalidate];renderSession=nil;canvas=nil;[tabButton removeFromSuperview];tabButton=nil;releaseHost(&tabHost);buttonOwner=0;
         if(eventMonitor)[NSEvent removeMonitor:eventMonitor];eventMonitor=nil;
     });
 }
 static void *create(){
-    auto *x=(NativeObject*)object_alloc(klass);x->playOutlet=bangout(x);x->outlet=bangout(x);x->request=qelem_new(x,(method)requestClip);x->playRequest=qelem_new(x,(method)requestPlayback);
+    auto *x=(NativeObject*)object_alloc(klass);dsp_setup(&x->ob,2);x->ob.z_misc|=Z_NO_INPLACE;x->rt=new StreamRuntime;outlet_new(x,"signal");outlet_new(x,"signal");x->playOutlet=bangout(x);x->outlet=bangout(x);x->request=qelem_new(x,(method)requestClip);x->playRequest=qelem_new(x,(method)requestPlayback);
     if(instance)return x;instance=x;
     dispatch_async(dispatch_get_main_queue(),^{
         if(instance!=x||![NSBundle.mainBundle.bundlePath isEqual:@PITCH_LIVE_COPY])return;
-        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions20 new];
+        NSDate *launch=NSRunningApplication.currentApplication.launchDate;
+        liveSessionIdentity=launch?[NSString stringWithFormat:@"%d-%.6f",NSProcessInfo.processInfo.processIdentifier,launch.timeIntervalSince1970]:NSUUID.UUID.UUIDString;
+        documentStore=[[PitchDocumentStore alloc] initWithDirectory:@PITCH_STATE_DIRECTORY];
+        documentStore.saveFailed=^(NSString *message){[canvas setAudioStatus:message ready:NO];log(message);};
+        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions39 new];
         timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer*){tick();}];
-        playTimer=[NSTimer scheduledTimerWithTimeInterval:1.0/30 repeats:YES block:^(NSTimer*){if(instance&&pitchMode)qelem_set(instance->playRequest);}];
+        playTimer=[NSTimer scheduledTimerWithTimeInterval:1.0/30 repeats:YES block:^(NSTimer*){if(instance)qelem_set(instance->playRequest);}];
         eventMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown|NSEventMaskKeyDown|NSEventMaskScrollWheel|NSEventMaskMagnify) handler:^NSEvent*(NSEvent *e){
             if(e.type==NSEventTypeScrollWheel||e.type==NSEventTypeMagnify){
                 if(pitchMode&&canvas.window==e.window&&NSPointInRect([canvas convertPoint:e.locationInWindow fromView:nil],canvas.bounds)){
@@ -316,6 +429,7 @@ static void *create(){
                 return e;
             }
             if(e.type==NSEventTypeKeyDown){
+                if(pitchMode&&e.window.firstResponder==canvas&&[canvas handleRegionKey:e])return nil;
                 if(pitchMode&&e.window.firstResponder==canvas&&[canvas handleNavigationKey:e])return nil;
                 if(pitchMode&&e.window.firstResponder==canvas&&(e.modifierFlags&NSEventModifierFlagCommand)&&[e.charactersIgnoringModifiers.lowercaseString isEqual:@"z"]){
                     if(e.modifierFlags&NSEventModifierFlagShift)[canvas redoEdit];else [canvas undoEdit];return nil;
@@ -339,7 +453,16 @@ static void *create(){
     });return x;
 }
 extern "C" C74_EXPORT void ext_main(void*){
-    klass=class_new("pitchnative20",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
+    klass=class_new("pitchnative39",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
+    class_addmethod(klass,(method)configureDSP,"dsp64",A_CANT,0);
+    class_addmethod(klass,(method)hostBeat,"hostbeat",A_FLOAT,0);
+    class_addmethod(klass,(method)hostTempo,"hosttempo",A_FLOAT,0);
+    class_addmethod(klass,(method)hostRun,"hostrun",A_LONG,0);
+    class_addmethod(klass,(method)clipIdentity,"clipid",A_LONG,0);
+    class_addmethod(klass,(method)songIdentity,"songid",A_LONG,0);
+    class_addmethod(klass,(method)ownTrack,"owntrack",A_LONG,0);
+    class_addmethod(klass,(method)clipTrack,"cliptrack",A_LONG,0);
+    class_dspinit(klass);
     class_addmethod(klass,(method)playbackState,"state",A_GIMME,0);
     class_addmethod(klass,(method)warpMode,"warping",A_LONG,0);
     class_addmethod(klass,(method)playingState,"playing",A_LONG,0);
