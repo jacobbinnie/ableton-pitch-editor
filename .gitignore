@@ -1,0 +1,26 @@
+# Generated output, third-party checkouts, and local app copies
+/vendor/
+/build/
+*.app/
+*.mxo/
+*.alp
+*.amxd
+
+# Audio and Live projects belong outside the source repository
+*.wav
+*.aif
+*.aiff
+*.mp3
+*.flac
+*.als
+*.asd
+
+# Machine-local state
+*.log
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+!.env.example
