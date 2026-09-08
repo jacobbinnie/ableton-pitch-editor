@@ -9,7 +9,7 @@ int main(){@autoreleasepool{try{
     PitchDocumentStore *store=[[PitchDocumentStore alloc] initWithDirectory:folder];
     auto a=[store open:analysis identity:@"run1:song1:clip1" sourceHash:@"source1"];
     require(a->split(0,.5)&&a->transpose(a->analysis().notes[1].id,.37),"setup edits");
-    require(a->setGain(0,-6)&&a->setVibrato(0,.3)&&a->setDrift(0,35,-20),"gain/vibrato edit");
+    require(a->setGain(0,-6)&&a->setVibrato(0,.3)&&a->setDrift(0,35,-20)&&a->setFormant(0,2.5),"gain/vibrato edit");
     [store save:a identity:@"run1:song1:clip1" sourceHash:@"source1"];
     auto other=[store open:analysis identity:@"run1:song1:clip2" sourceHash:@"source1"];
     require(other!=a&&other->analysis().notes.size()==1&&other->analysis().notes[0].semitones==0,"same source leaks clip edits");
@@ -18,7 +18,7 @@ int main(){@autoreleasepool{try{
     store=[[PitchDocumentStore alloc] initWithDirectory:folder];
     auto loaded=[store open:analysis identity:@"run1:song1:clip1" sourceHash:@"source1"];
     require(loaded->analysis().notes.size()==2&&loaded->analysis().notes[1].semitones==.37,"reload loses structural/fractional edits");
-    require(loaded->analysis().notes[0].gainDb==-6&&loaded->analysis().notes[0].vibrato==.3&&loaded->analysis().notes[0].driftStart==35&&loaded->analysis().notes[0].driftEnd==-20,"gain recovery");
+    require(loaded->analysis().notes[0].gainDb==-6&&loaded->analysis().notes[0].vibrato==.3&&loaded->analysis().notes[0].driftStart==35&&loaded->analysis().notes[0].driftEnd==-20&&loaded->analysis().notes[0].formant==2.5,"gain recovery");
     require(loaded->analysis().notes[1].id==a->analysis().notes[1].id,"reload changes ids");
     require([store open:analysis identity:@"run2:song1:clip1" sourceHash:@"source1"]->analysis().notes.size()==1,"session leaks edits");
     require([store open:analysis identity:@"run1:song1:clip1" sourceHash:@"source2"]->analysis().notes.size()==1,"changed source restores stale edits");
@@ -39,6 +39,15 @@ int main(){@autoreleasepool{try{
     store=[[PitchDocumentStore alloc] initWithDirectory:folder];
     auto migratedExpression=[store open:analysis identity:@"run1:song1:clip1" sourceHash:@"source1"];
     require(migratedExpression->analysis().notes[0].vibrato==.3&&migratedExpression->analysis().notes[0].driftStart==0&&migratedExpression->analysis().notes[0].driftEnd==0,"schema 3 drift migration");
+    NSDictionary *legacyDrift=@{@"schema":@4,@"identity":@"run1:song1:clip1",@"sourceHash":@"source1",@"notes":@[@[@0,@0,@1,@60,@.37,@(-6),@.3,@35,@(-20)]]};
+    [[NSJSONSerialization dataWithJSONObject:legacyDrift options:0 error:nil] writeToFile:file atomically:YES];
+    store=[[PitchDocumentStore alloc] initWithDirectory:folder];
+    auto migratedDrift=[store open:analysis identity:@"run1:song1:clip1" sourceHash:@"source1"];
+    require(migratedDrift->analysis().notes[0].driftStart==35&&migratedDrift->analysis().notes[0].driftEnd==-20&&migratedDrift->analysis().notes[0].formant==0,"schema 4 formant migration");
+    NSDictionary *badFormant=@{@"schema":@5,@"identity":@"run1:song1:clip1",@"sourceHash":@"source1",@"notes":@[@[@0,@0,@1,@60,@.37,@(-6),@.3,@35,@(-20),@7]]};
+    [[NSJSONSerialization dataWithJSONObject:badFormant options:0 error:nil] writeToFile:file atomically:YES];
+    store=[[PitchDocumentStore alloc] initWithDirectory:folder];
+    require([store open:analysis identity:@"run1:song1:clip1" sourceHash:@"source1"]->analysis().notes[0].semitones==0,"invalid formant recovery");
     NSDictionary *badDrift=@{@"schema":@4,@"identity":@"run1:song1:clip1",@"sourceHash":@"source1",@"notes":@[@[@0,@0,@1,@60,@.37,@(-6),@.3,@201,@0]]};
     [[NSJSONSerialization dataWithJSONObject:badDrift options:0 error:nil] writeToFile:file atomically:YES];
     store=[[PitchDocumentStore alloc] initWithDirectory:folder];

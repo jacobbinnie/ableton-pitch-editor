@@ -30,7 +30,7 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
 
 @implementation PitchCanvas
 - (instancetype)initWithFrame:(NSRect)frame {
-    if ((self = [super initWithFrame:frame])) { selected = -1; lowest = 48; highest = 84; self.toolTip=@"Click empty space or the ruler to position playback. Drag notes vertically to transpose; Shift-drag to fine-tune. Option-Up/Down adjusts one cent. Scroll to pan; Command-scroll to zoom time; Option-scroll to zoom pitch. F fits the clip. Right-click to split or join. Drag upper corner handles to adjust start/end drift in cents. Drag Gain below the note to balance volume. Drag Vibrato above it downward to reduce variation; double-click either handle to reset. Command-Z undoes."; }
+    if ((self = [super initWithFrame:frame])) { selected = -1; lowest = 48; highest = 84; self.toolTip=@"Click empty space or the ruler to position playback. Drag notes vertically to transpose; Shift-drag to fine-tune. Option-Up/Down adjusts one cent. Scroll to pan; Command-scroll to zoom time; Option-scroll to zoom pitch. F fits the clip. Right-click to split or join. Drag the lower-right handle for formant tone. Drag upper corner handles to adjust start/end drift in cents. Drag Gain below the note to balance volume. Drag Vibrato above it downward to reduce variation; double-click either handle to reset. Command-Z undoes."; }
     if(self){
         NSUserDefaults *preferences=[[NSUserDefaults alloc] initWithSuiteName:@"local.jacob.pitch-editor"];
         BOOL on=[preferences objectForKey:@"snapPitch"]?[preferences boolForKey:@"snapPitch"]:YES;
@@ -98,7 +98,7 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
     [menu addItem:split];
     NSMenuItem *join=[[NSMenuItem alloc] initWithTitle:@"Join with Next Note" action:@selector(joinNext:) keyEquivalent:@""];
     join.target=self;join.enabled=document->canJoinNext(notes[selected].id);
-    join.toolTip=@"Join touching notes with matching pitch, gain and vibrato. Reset drift before joining.";
+    join.toolTip=@"Join touching notes with matching pitch, gain, vibrato and formant. Reset drift before joining.";
     [menu addItem:join];[menu addItem:NSMenuItem.separatorItem];
     NSMenuItem *remove=[[NSMenuItem alloc] initWithTitle:@"Remove Pitch Region" action:@selector(removeRegion:) keyEquivalent:@""];
     remove.target=self;remove.toolTip=@"Leave the audio unchanged in this region.";[menu addItem:remove];return menu;
@@ -111,14 +111,14 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
 - (BOOL)isAccessibilityElement { return YES; }
 - (NSString*)accessibilityRole { return NSAccessibilityGroupRole; }
 - (NSString*)accessibilityLabel { return @"Pitch notes"; }
-- (NSString*)accessibilityHelp { return @"Click empty space or the ruler to position playback. Drag the ruler to pan. Command-scroll or pinch to zoom time; Option-scroll zooms pitch. Option-drag or ruler drag pans. Shift-arrows pan. Plus/minus zoom; F fits. Left/right select notes, up/down transpose; Option-Up/Down adjusts one cent. Shift-drag fine-tunes. Drag note edges to resize. Delete removes the pitch region, leaving audio intact. Right-click a note to split or join. Drag upper corner handles to adjust start/end drift in cents. Drag Gain below the note to balance volume. Drag Vibrato above it downward to reduce variation; double-click either handle to reset. Command Z undoes."; }
+- (NSString*)accessibilityHelp { return @"Click empty space or the ruler to position playback. Drag the ruler to pan. Command-scroll or pinch to zoom time; Option-scroll zooms pitch. Option-drag or ruler drag pans. Shift-arrows pan. Plus/minus zoom; F fits. Left/right select notes, up/down transpose; Option-Up/Down adjusts one cent. Shift-drag fine-tunes. Drag note edges to resize. Delete removes the pitch region, leaving audio intact. Right-click a note to split or join. Drag the lower-right handle for formant tone. Drag upper corner handles to adjust start/end drift in cents. Drag Gain below the note to balance volume. Drag Vibrato above it downward to reduce variation; double-click either handle to reset. Command Z undoes."; }
 - (id)accessibilityValue {
     NSString *render=audioStatus?[@"; " stringByAppendingString:audioStatus]:@"";
     NSString *play=playheadVisible?[NSString stringWithFormat:@"; playhead %.2fs %@",playheadSeconds,playbackRunning?@"playing":@"stopped"]:@"";
     if (!document) return @"No audio loaded";
     if (selected < 0) return [NSString stringWithFormat:@"%lu notes; no selection; view %.2f to %.2f seconds; %.1f pitch rows, top %.1f%@",static_cast<unsigned long>(document->analysis().notes.size()),viewport.start,viewport.start+viewport.span,viewport.rows,viewport.top,[play stringByAppendingString:render]];
     const auto& note = document->analysis().notes[selected];
-    return [NSString stringWithFormat:@"Note %ld, %.2f to %.2f seconds, transposition %+.2f semitones, gain %+.1f dB, vibrato %.0f%%, drift start %+.0f cents, end %+.0f cents%@",static_cast<long>(selected+1),note.start,note.end,note.semitones,note.gainDb,note.vibrato*100,note.driftStart,note.driftEnd,[play stringByAppendingString:render]];
+    return [NSString stringWithFormat:@"Note %ld, %.2f to %.2f seconds, transposition %+.2f semitones, gain %+.1f dB, vibrato %.0f%%, drift start %+.0f cents, end %+.0f cents, formant %+.2f semitones%@",static_cast<long>(selected+1),note.start,note.end,note.semitones,note.gainDb,note.vibrato*100,note.driftStart,note.driftEnd,note.formant,[play stringByAppendingString:render]];
 }
 - (void)setAnalysis:(pitch::Analysis)analysis {
     [self setDocument:std::make_shared<pitch::Document>(std::move(analysis))];
@@ -295,7 +295,9 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
         [[NSBezierPath bezierPathWithOvalInRect:handle] fill];
         [neutral(0x35) setFill];NSRectFill(NSInsetRect(handle,2,4));
         double gain=gainDragging?previewGain:document->analysis().notes[selected].gainDb;
-        label([NSString stringWithFormat:@"Gain %+.1f dB",gain],NSMakePoint(NSMaxX(handle)+4,NSMinY(handle)-1),neutral(0xc0),10);
+        NSRect toneHandle=[self formantHandleRect];[neutral(0xb8) setFill];[[NSBezierPath bezierPathWithOvalInRect:toneHandle] fill];
+        double tone=formantDragging?previewFormant:n.formant;
+        label([NSString stringWithFormat:@"Gain %+.1f dB   Formant %+.2f st",gain,tone],NSMakePoint(std::clamp(NSMidX(handle)-85,NSMinX(plot),std::max(NSMinX(plot),NSMaxX(plot)-200)),NSMaxY(handle)+2),neutral(0xc0),10);
     }
     // Show the estimated edited contour inside the moved notes; this is not re-analysis.
     NSBezierPath* contour = [NSBezierPath bezierPath];
@@ -330,6 +332,11 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
     NSRect note=[self rectForNote:document->analysis().notes[selected] index:selected];
     return NSMakeRect(NSMidX(note)-5,NSMinY(note)-12,10,10);
 }
+- (NSRect)formantHandleRect {
+    if(!document||selected<0)return NSZeroRect;
+    NSRect note=[self rectForNote:document->analysis().notes[selected] index:selected];
+    return NSMakeRect(std::max(NSMaxX(note),NSMidX(note)+16)-5,NSMaxY(note)+2,10,10);
+}
 - (NSRect)gainHandleRect {
     if(!document||selected<0)return NSZeroRect;
     NSRect note=[self rectForNote:document->analysis().notes[selected] index:selected];
@@ -343,7 +350,14 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
     rulerClick=NO;
     if((event.modifierFlags&NSEventModifierFlagOption)||point.y<24||point.x<48){panning=YES;followSuspended=YES;lastPan=point;dragOrigin=point;rulerClick=point.y<24&&point.x>=48&&!(event.modifierFlags&NSEventModifierFlagOption);return;}
     if(!NSPointInRect(point,[self plotRect]))return;
-    gainDragging=NO;vibratoDragging=NO;driftDragging=0;
+    gainDragging=NO;vibratoDragging=NO;driftDragging=0;formantDragging=NO;
+    if(selected>=0&&NSPointInRect(point,[self formantHandleRect])){
+        const auto& note=document->analysis().notes[selected];
+        if(event.clickCount==2){if(document->setFormant(note.id,0))[self notifyEdit];self.needsDisplay=YES;return;}
+        initialFormant=previewFormant=note.formant;initialShift=previewShift=note.semitones;
+        formantDragging=YES;dragging=YES;resizeEdge=0;dragOrigin=point;
+        if(self.noteAudition)self.noteAudition(note,NO);return;
+    }
     if(selected>=0)for(NSInteger side:{-1,1})if(NSPointInRect(point,[self driftHandleRect:side])){
         const auto& note=document->analysis().notes[selected];
         if(event.clickCount==2){if(document->setDrift(note.id,side<0?0:note.driftStart,side>0?0:note.driftEnd))[self notifyEdit];self.needsDisplay=YES;return;}
@@ -390,6 +404,12 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
     NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
     if(panning){if(rulerClick&&std::hypot(p.x-dragOrigin.x,p.y-dragOrigin.y)<3)return;rulerClick=NO;NSRect r=[self plotRect];viewport.pan((lastPan.x-p.x)/r.size.width*viewport.span,(p.y-lastPan.y)/r.size.height*viewport.rows);lastPan=p;self.needsDisplay=YES;return;}
     if (!dragging) return;
+    if(formantDragging){
+        previewFormant=std::clamp(initialFormant+(dragOrigin.y-p.y)*((event.modifierFlags&NSEventModifierFlagShift)?.01:.05),-6.,6.);
+        auto notes=[self noteSnapshot];notes[selected].formant=previewFormant;
+        if(self.editCommitted)self.editCommitted(notes);if(self.noteAudition)self.noteAudition(notes[selected],NO);
+        self.needsDisplay=YES;return;
+    }
     if(driftDragging){
         previewDrift=std::clamp(initialDrift+(dragOrigin.y-p.y)*((event.modifierFlags&NSEventModifierFlagShift)?.2:2.),-200.,200.);
         auto notes=[self noteSnapshot];if(driftDragging<0)notes[selected].driftStart=previewDrift;else notes[selected].driftEnd=previewDrift;
@@ -430,11 +450,11 @@ static void label(NSString* text, NSPoint at, NSColor* ink, CGFloat size) {
     dispatch_async(dispatch_get_main_queue(),^{if(self.window)[self.window makeFirstResponder:self];});
     if (!dragging || !document) return;
     const auto& note=document->analysis().notes[selected];
-    BOOL changed=driftDragging?document->setDrift(note.id,driftDragging<0?previewDrift:note.driftStart,driftDragging>0?previewDrift:note.driftEnd):vibratoDragging?document->setVibrato(document->analysis().notes[selected].id,previewVibrato):gainDragging?document->setGain(document->analysis().notes[selected].id,previewGain):resizeEdge?document->resize(document->analysis().notes[selected].id,previewStart,previewEnd):document->transpose(document->analysis().notes[selected].id, previewShift);
+    BOOL changed=formantDragging?document->setFormant(note.id,previewFormant):driftDragging?document->setDrift(note.id,driftDragging<0?previewDrift:note.driftStart,driftDragging>0?previewDrift:note.driftEnd):vibratoDragging?document->setVibrato(document->analysis().notes[selected].id,previewVibrato):gainDragging?document->setGain(document->analysis().notes[selected].id,previewGain):resizeEdge?document->resize(document->analysis().notes[selected].id,previewStart,previewEnd):document->transpose(document->analysis().notes[selected].id, previewShift);
     if(changed)[self notifyEdit];
     else if(self.editCommitted)self.editCommitted([self noteSnapshot]);
     if(!resizeEdge&&self.noteAudition)self.noteAudition(document->analysis().notes[selected],YES);
-    dragging = NO;gainDragging=NO;vibratoDragging=NO;driftDragging=0;resizeEdge=0;[self rebuildExpression]; self.needsDisplay = YES;
+    dragging = NO;formantDragging=NO;gainDragging=NO;vibratoDragging=NO;driftDragging=0;resizeEdge=0;[self rebuildExpression]; self.needsDisplay = YES;
 }
 - (void)undoEdit { if (document && !dragging) { if(document->undo()){[self clampSelection];[self notifyEdit];} self.needsDisplay = YES; } }
 - (void)redoEdit { if (document && !dragging) { if(document->redo()){[self clampSelection];[self notifyEdit];} self.needsDisplay = YES; } }

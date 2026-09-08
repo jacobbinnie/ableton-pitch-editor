@@ -15,3 +15,5 @@
 - Recovery JSON can shift an NSNumber round-trip by a few binary ULPs. Compare note IDs exactly and numerical parameters within 1e-12 when verifying reload plus undo, rather than overwriting a valid user edit because textual/bitwise equality failed.
 
 - Drift acoustic validation measures early/late pitch difference and retained vibrato separately. A flattened output alone is not success if vibrato was also removed; the 44.1/48 kHz shared-DSP test checks both, alongside independent endpoint/combined-curve model tests.
+
+- `pitch-formant-test` measures a synthetic harmonic spectral-envelope centroid and separately verifies the expected fundamental period, with and without note transposition. Envelope movement alone cannot prove independent formant control; test neutral preservation under transposition and both shift directions. It does not establish real-vocal sound quality.

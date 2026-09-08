@@ -66,9 +66,9 @@ static void drawTab(NSString *title,NSRect rect,BOOL selected){
     NSSize text=[title sizeWithAttributes:attrs];
     [title drawAtPoint:NSMakePoint(round(NSMidX(rect)-text.width/2),round(NSMidY(rect)-text.height/2)) withAttributes:attrs];
 }
-@interface PitchTabButton39 : NSButton
+@interface PitchTabButton40 : NSButton
 @end
-@implementation PitchTabButton39
+@implementation PitchTabButton40
 - (void)drawRect:(NSRect)rect {drawTab(self.title,self.bounds,self.state==NSControlStateValueOn);}
 - (void)setState:(NSControlStateValue)value {[super setState:value];self.needsDisplay=YES;}
 @end
@@ -161,12 +161,12 @@ static void closePitch(){
     log(@"Pitch mode closed");
 }
 static void tick();
-@interface PitchNativeActions39 : NSObject
+@interface PitchNativeActions40 : NSObject
 - (void)toggle:(id)sender;
 - (void)openPitch;
 @end
-static PitchNativeActions39 *actions;
-@implementation PitchNativeActions39
+static PitchNativeActions40 *actions;
+@implementation PitchNativeActions40
 - (void)toggle:(id)sender {
     (void)sender;
     if(pitchMode){closePitch();return;}
@@ -252,7 +252,7 @@ static void tick(){
             NSSize size=sizeOf(button);tabHost=makeHost(button,size.width,size.height);
             NSView *container=nativeView(tabHost);
             if(container){
-                tabButton=[PitchTabButton39 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
+                tabButton=[PitchTabButton40 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
                 tabButton.frame=container.bounds;tabButton.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
                 tabButton.bordered=NO;tabButton.buttonType=NSButtonTypePushOnPushOff;
                 tabButton.font=tabFont();
@@ -291,7 +291,7 @@ static void performAudio(NativeObject *x,t_object*,double **ins,long,double **ou
         double beat=r->position+offset/r->samplesPerBeat.load();
         if(state&&r->running.load()){shift=state->shiftAt(beat);gain=state->gainAt(beat);}
         bool expressive=state&&state->enabled&&r->running.load()&&state->expression&&!state->expression->empty();
-        r->shifter->process(ins[0]+offset,ins[1]+offset,outs[0]+offset,outs[1]+offset,(std::size_t)std::min(64L,frames-offset),shift,gain,expressive);
+        r->shifter->process(ins[0]+offset,ins[1]+offset,outs[0]+offset,outs[1]+offset,(std::size_t)std::min(64L,frames-offset),shift,gain,expressive,state&&state->enabled&&r->running.load()?state->formantAt(beat):0);
     }
     streamStore.release();
     if(r->running.load())r->position+=frames/r->samplesPerBeat.load();
@@ -418,7 +418,7 @@ static void *create(){
         liveSessionIdentity=launch?[NSString stringWithFormat:@"%d-%.6f",NSProcessInfo.processInfo.processIdentifier,launch.timeIntervalSince1970]:NSUUID.UUID.UUIDString;
         documentStore=[[PitchDocumentStore alloc] initWithDirectory:@PITCH_STATE_DIRECTORY];
         documentStore.saveFailed=^(NSString *message){[canvas setAudioStatus:message ready:NO];log(message);};
-        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions39 new];
+        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions40 new];
         timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer*){tick();}];
         playTimer=[NSTimer scheduledTimerWithTimeInterval:1.0/30 repeats:YES block:^(NSTimer*){if(instance)qelem_set(instance->playRequest);}];
         eventMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown|NSEventMaskKeyDown|NSEventMaskScrollWheel|NSEventMaskMagnify) handler:^NSEvent*(NSEvent *e){
@@ -453,7 +453,7 @@ static void *create(){
     });return x;
 }
 extern "C" C74_EXPORT void ext_main(void*){
-    klass=class_new("pitchnative39",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
+    klass=class_new("pitchnative40",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
     class_addmethod(klass,(method)configureDSP,"dsp64",A_CANT,0);
     class_addmethod(klass,(method)hostBeat,"hostbeat",A_FLOAT,0);
     class_addmethod(klass,(method)hostTempo,"hosttempo",A_FLOAT,0);

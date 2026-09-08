@@ -17,6 +17,21 @@ struct StreamState {
     std::shared_ptr<const ExpressionCurve> expression;
     double start=0,end=0,marker=0,loopStart=0,loopEnd=0;
     bool enabled=false,loop=false;
+    double formantAt(double songBeat) const {
+        if(!enabled||songBeat<start||songBeat>=end)return 0;
+        double beat=marker+songBeat-start;
+        if(loop&&loopEnd>loopStart&&beat>=loopEnd)beat=loopStart+std::fmod(beat-loopStart,loopEnd-loopStart);
+        auto time=sourceTime(beat,true,warp);if(!time)return 0;
+        for(std::size_t i=0;i<notes.size();++i){
+            const auto& n=notes[i];if(*time<n.start||*time>=n.end)continue;
+            double begin=n.start,finish=n.end;
+            for(std::size_t j=i;j>0;--j){const auto& p=notes[j-1];if(std::abs(p.end-begin)>1e-6||p.formant!=n.formant)break;begin=p.start;}
+            for(std::size_t j=i+1;j<notes.size();++j){const auto& p=notes[j];if(std::abs(p.start-finish)>1e-6||p.formant!=n.formant)break;finish=p.end;}
+            double ramp=std::min(.015,(finish-begin)*.5);if(ramp<=0)return 0;
+            double w=std::clamp(std::min(*time-begin,finish-*time)/ramp,0.,1.);return n.formant*w*w*(3-2*w);
+        }
+        return 0;
+    }
     double gainAt(double songBeat) const {
         if(!enabled||songBeat<start||songBeat>=end)return 1;
         double beat=marker+songBeat-start;
@@ -60,29 +75,35 @@ class StreamShifter {
     RubberBand::RubberBandLiveShifter engine;
     std::vector<float> input[2],output[2],dry[2];
     std::size_t cursor=0,dryCursor=0;
-    double wet=0,smoothedGain=1,gainCoefficient=0;
-    std::vector<double> gainDelay,pitchDelay;
+    double wet=0,smoothedGain=1,gainCoefficient=0,smoothedFormant=0,formantCoefficient=0;
+    std::vector<double> gainDelay,pitchDelay,formantDelay;
     std::size_t pitchCursor=0;
 public:
     const std::size_t block,delay;
     explicit StreamShifter(double rate,std::size_t pitchLag=1024):engine((std::size_t)rate,2,RubberBand::RubberBandLiveShifter::OptionFormantPreserved|RubberBand::RubberBandLiveShifter::OptionChannelsTogether),block(engine.getBlockSize()),delay(engine.getStartDelay()+block){
         // Pinned R3 short-window control alignment: two 512-frame blocks.
         // Audio delay and parameter delay are different; see dynamic-F0 tests.
-        pitchDelay.assign(pitchLag+1,0);gainDelay.assign(delay,1);gainCoefficient=1-std::exp(-1/(rate*.005));
+        pitchDelay.assign(pitchLag+1,0);formantDelay.assign(pitchLag+1,0);formantCoefficient=1-std::exp(-1/(rate*.01));gainDelay.assign(delay,1);gainCoefficient=1-std::exp(-1/(rate*.005));
         for(int c=0;c<2;++c){input[c].resize(block);output[c].resize(block);dry[c].resize(delay);}
     }
-    void process(const double *left,const double *right,double *outLeft,double *outRight,std::size_t count,double shift,double gain=1,bool forceWet=false){
+    void process(const double *left,const double *right,double *outLeft,double *outRight,std::size_t count,double shift,double gain=1,bool forceWet=false,double formant=0){
         for(std::size_t i=0;i<count;++i){
             input[0][cursor]=(float)left[i];input[1][cursor]=(float)right[i];
             // Delay-matched bypass keeps unity regions free from resynthesis.
-            const double target=forceWet||std::abs(shift)>.0001?1:0;wet+=std::clamp(target-wet,-.002,.002);
+            smoothedFormant+=formantCoefficient*(formant-smoothedFormant);
+            const double target=forceWet||std::abs(smoothedFormant)>.0001||std::abs(shift)>.0001?1:0;wet+=std::clamp(target-wet,-.002,.002);
             smoothedGain+=gainCoefficient*(gain-smoothedGain);
             double appliedGain=gainDelay[dryCursor];gainDelay[dryCursor]=smoothedGain;
             double dryL=dry[0][dryCursor],dryR=dry[1][dryCursor];dry[0][dryCursor]=(float)left[i];dry[1][dryCursor]=(float)right[i];dryCursor=(dryCursor+1)%delay;
             outLeft[i]=(dryL*(1-wet)+output[0][cursor]*wet)*appliedGain;outRight[i]=(dryR*(1-wet)+output[1][cursor]*wet)*appliedGain;
-            pitchDelay[pitchCursor]=shift;pitchCursor=(pitchCursor+1)%pitchDelay.size();
+            pitchDelay[pitchCursor]=shift;formantDelay[pitchCursor]=smoothedFormant;pitchCursor=(pitchCursor+1)%pitchDelay.size();
             if(++cursor==block){
-                engine.setPitchScale(std::exp2(pitchDelay[pitchCursor]/12));
+                double pitchRatio=std::exp2(pitchDelay[pitchCursor]/12);
+                engine.setPitchScale(pitchRatio);
+                // R3 applies its explicit envelope ratio before pitch resampling.
+                // Compensate that resampling so the control is relative to source tone.
+                double tone=formantDelay[pitchCursor];
+                engine.setFormantScale(std::abs(tone)<1e-9?0:std::exp2(tone/12)/pitchRatio);
                 const float *in[]={input[0].data(),input[1].data()};float *out[]={output[0].data(),output[1].data()};
                 engine.shift(in,out);cursor=0;
             }

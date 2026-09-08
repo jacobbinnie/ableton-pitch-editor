@@ -36,7 +36,7 @@ public:
                 left[i]=source->channels[0][position+i]*fade*.8;
                 right[i]=source->channels[source->channels.size()>1?1:0][position+i]*fade*.8;
             }
-            shifter.process(left.data(),right.data(),outLeft.data(),outRight.data(),n,state->shiftAt(time),state->gainAt(time),state->expression&&!state->expression->empty());
+            shifter.process(left.data(),right.data(),outLeft.data(),outRight.data(),n,state->shiftAt(time),state->gainAt(time),state->expression&&!state->expression->empty(),state->formantAt(time));
             for(std::size_t i=0;i<n;++i){l[offset+i]=(float)outLeft[i];r[offset+i]=(float)outRight[i];}
             position+=n;offset+=n;
         }

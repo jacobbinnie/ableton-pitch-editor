@@ -10,7 +10,7 @@ See [live audio behavior and limitations](docs/live-audio.md).
 
 See [audio renderer build, usage and validation](docs/audio-renderer.md) and [the engine implementation plan](docs/audio-engine-plan.md).
 
-Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative39.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
+Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative40.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
 
 The adapter creates `APlatformViewHost` children inside the existing native tab button and `LWarpedAudioTimelineEditor`. Live supplies actual `TPlatformViewContainer` surfaces for an AppKit toggle and pitch canvas. It does not create a floating window or position an unrelated NSView over the main app. The mode is local to this experimental adapter; Live's internal three-mode enum is unchanged. A Max device provides the loader and selected-clip file lookup.
 
@@ -165,10 +165,16 @@ Select a note, then drag the small round Gain handle beneath it up/down. Shift-d
 
 Select a note and drag the round Vibrato handle above it downward to reduce fast pitch variation. 100% preserves the original; 0% requests maximum reduction. Shift-drag is finer; double-click resets to 100%. The estimated contour updates while dragging. Playback and audition now share the Rubber Band processor and correction curve, while audition still uses the Mac output independently of Live's effects.
 
-Reduction keeps the estimated pitch center and local linear drift, and skips uncertain/unvoiced runs or runs shorter than 300 ms. This is a variation reducer, not a complete vibrato classifier: it can also affect fast ornamentation. 0% is a requested amount, not a promise of a perfectly flat audible result. Synthetic rendered tests at 4–8 Hz show approximately 35–60% depth reduction; real annotated vocal and listening validation remain necessary. Manual drift handles are available below; formant editing is not implemented yet.
+Reduction keeps the estimated pitch center and local linear drift, and skips uncertain/unvoiced runs or runs shorter than 300 ms. This is a variation reducer, not a complete vibrato classifier: it can also affect fast ornamentation. 0% is a requested amount, not a promise of a perfectly flat audible result. Synthetic rendered tests at 4–8 Hz show approximately 35–60% depth reduction; real annotated vocal and listening validation remain necessary. Manual drift handles are available below; formant editing is available below.
 
 ### Start/end pitch drift (experimental)
 
 The upper-left and upper-right handles adjust the beginning and end of the selected note in cents, with its midpoint anchored. Drag up to raise, down to lower; Shift-drag is finer, and double-click either handle resets that side to zero. The upper middle handle remains Vibrato. Drift is manual contour shaping, not automatic drift detection or a percentage-based correction control.
 
 Each side supports ±200 cents and composes with pitch, vibrato and gain edits through the shared live/audition engine. Reliable voiced runs under 300 ms and uncertain/unvoiced sections are skipped, with 40 ms edge tapers. Changes update the estimated contour immediately and support local undo/recovery. Resize reinterprets drift relative to the new bounds; reset drift before splitting/joining, because those operations would change its midpoint/shape. Source audio is not rewritten.
+
+### Formant tone (experimental)
+
+Drag the selected note’s lower-right handle vertically to change its formant tone independently of note pitch. The range is −6 to +6 semitones; Shift-drag is finer and double-click restores neutral. Playback and audition update immediately, with local undo/redo and recovery. The waveform and pitch contour do not represent spectral tone changes.
+
+The processor compensates existing transposition when applying formant shift. Synthetic spectral-envelope and periodicity tests pass at 44.1/48 kHz with both neutral and transposed notes. It remains an experimental tonal effect requiring real-vocal listening validation, especially at extremes.

@@ -24,3 +24,6 @@ subprocess.run([str(stream_test)],check=True)
 expression_test=build/'pitch-expression-audio-test'
 subprocess.run(flags+[str(root/'tests/pitch_expression_audio_test.cpp'),str(root/'src/pitch_core.cpp'),str(obj),'-framework','Accelerate','-o',str(expression_test)],check=True)
 subprocess.run([str(expression_test)],check=True)
+formant_test=build/'pitch-formant-test'
+subprocess.run(flags+[str(root/'tests/pitch_formant_test.cpp'),str(root/'src/pitch_core.cpp'),str(obj),'-framework','Accelerate','-o',str(formant_test)],check=True)
+subprocess.run([str(formant_test)],check=True)

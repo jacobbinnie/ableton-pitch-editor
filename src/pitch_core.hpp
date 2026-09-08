@@ -9,7 +9,7 @@ struct Frame {
 };
 struct Note {
     std::size_t id = 0;
-    double start = 0, end = 0, originalMidi = 0, semitones = 0, gainDb = 0, vibrato = 1, driftStart = 0, driftEnd = 0; // Drift endpoints in cents.
+    double start = 0, end = 0, originalMidi = 0, semitones = 0, gainDb = 0, vibrato = 1, driftStart = 0, driftEnd = 0, formant = 0; // Drift endpoints in cents; formant shift in semitones.
 };
 struct WavePeak { float minimum = 0, maximum = 0; };
 struct Analysis {
@@ -28,6 +28,7 @@ public:
     explicit Document(Analysis analysis);
     const Analysis& analysis() const { return data_; }
     bool transpose(std::size_t id, double semitones);
+    bool setFormant(std::size_t id, double semitones);
     bool setDrift(std::size_t id, double startCents, double endCents);
     bool setVibrato(std::size_t id, double amount);
     bool setGain(std::size_t id, double db);

@@ -18,6 +18,8 @@
     NSInteger resizeEdge;
     double previewStart,previewEnd;
     BOOL gainDragging,vibratoDragging;
+    BOOL formantDragging;
+    double initialFormant,previewFormant;
     NSInteger driftDragging;
     double initialDrift,previewDrift;
     double initialVibrato,previewVibrato;

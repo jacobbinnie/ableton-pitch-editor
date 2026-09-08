@@ -130,6 +130,13 @@ bool Document::transpose(std::size_t id, double semitones) {
     auto notes=data_.notes;notes[found-data_.notes.begin()].semitones=semitones;commit(std::move(notes));
     return true;
 }
+bool Document::setFormant(std::size_t id,double semitones) {
+    if(!std::isfinite(semitones)||std::abs(semitones)>6)return false;
+    auto notes=data_.notes;
+    auto found=std::find_if(notes.begin(),notes.end(),[id](const Note& n){return n.id==id;});
+    if(found==notes.end()||found->formant==semitones)return false;
+    found->formant=semitones;commit(std::move(notes));return true;
+}
 bool Document::setDrift(std::size_t id,double startCents,double endCents) {
     if(!std::isfinite(startCents)||!std::isfinite(endCents)||std::abs(startCents)>200||std::abs(endCents)>200)return false;
     auto notes=data_.notes;
@@ -167,7 +174,7 @@ bool Document::canJoinNext(std::size_t id) const {
     const auto& next=*(found+1);
     // Joining is a segmentation correction, not an implicit rewrite of another
     // note's pitch edit or processing of an intervening breath/silent region.
-    return std::abs(next.start-found->end)<1e-6&&std::abs(next.semitones-found->semitones)<1e-9&&std::abs(next.gainDb-found->gainDb)<1e-9&&next.vibrato==found->vibrato&&found->driftStart==0&&found->driftEnd==0&&next.driftStart==0&&next.driftEnd==0;
+    return std::abs(next.start-found->end)<1e-6&&std::abs(next.semitones-found->semitones)<1e-9&&std::abs(next.gainDb-found->gainDb)<1e-9&&next.formant==found->formant&&next.vibrato==found->vibrato&&found->driftStart==0&&found->driftEnd==0&&next.driftStart==0&&next.driftEnd==0;
 }
 bool Document::joinNext(std::size_t id) {
     if(!canJoinNext(id))return false;

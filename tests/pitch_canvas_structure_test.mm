@@ -4,6 +4,7 @@
 
 @interface PitchCanvas (TestGeometry)
 - (NSRect)gainHandleRect;
+- (NSRect)formantHandleRect;
 - (NSRect)driftHandleRect:(NSInteger)side;
 - (NSRect)vibratoHandleRect;
 - (NSRect)rectForNote:(const pitch::Note&)note index:(NSInteger)index;
@@ -92,5 +93,14 @@ int main(){@autoreleasepool{try{
     [canvas redoEdit];require([canvas noteSnapshot][0].driftStart==50,"drift redo");
     auto resetDrift=[NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:[canvas convertPoint:driftPoint toView:nil] modifierFlags:0 timestamp:0 windowNumber:0 context:nil eventNumber:0 clickCount:2 pressure:1];
     [canvas mouseDown:resetDrift];require([canvas noteSnapshot][0].driftStart==0,"drift reset");
+    auto formantRect=[canvas formantHandleRect];NSPoint formantPoint=NSMakePoint(NSMidX(formantRect),NSMidY(formantRect));
+    [canvas mouseDown:eventAt(formantPoint,NSEventTypeLeftMouseDown)];
+    [canvas mouseDragged:eventAt(NSMakePoint(formantPoint.x,formantPoint.y-40),NSEventTypeLeftMouseDragged)];
+    [canvas mouseUp:eventAt(NSMakePoint(formantPoint.x,formantPoint.y-40),NSEventTypeLeftMouseUp)];
+    require([canvas noteSnapshot][0].formant==2&&[canvas noteSnapshot][0].semitones==.37,"formant drag changed pitch");
+    [canvas undoEdit];require([canvas noteSnapshot][0].formant==0,"formant undo");
+    [canvas redoEdit];require([canvas noteSnapshot][0].formant==2,"formant redo");
+    auto resetFormant=[NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:[canvas convertPoint:formantPoint toView:nil] modifierFlags:0 timestamp:0 windowNumber:0 context:nil eventNumber:0 clickCount:2 pressure:1];
+    [canvas mouseDown:resetFormant];require([canvas noteSnapshot][0].formant==0,"formant reset");
     std::cout<<"PASS: context split/join, publication, selection and undo/redo\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}}}
