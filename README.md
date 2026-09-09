@@ -10,7 +10,7 @@ See [live audio behavior and limitations](docs/live-audio.md).
 
 See [audio renderer build, usage and validation](docs/audio-renderer.md) and [the engine implementation plan](docs/audio-engine-plan.md).
 
-Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative40.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
+Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative41.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
 
 The adapter creates `APlatformViewHost` children inside the existing native tab button and `LWarpedAudioTimelineEditor`. Live supplies actual `TPlatformViewContainer` surfaces for an AppKit toggle and pitch canvas. It does not create a floating window or position an unrelated NSView over the main app. The mode is local to this experimental adapter; Live's internal three-mode enum is unchanged. A Max device provides the loader and selected-clip file lookup.
 
@@ -30,7 +30,7 @@ The [39-case detector benchmark](benchmarks/README.md) now measures pitch, voici
 
 ### Playback cursor
 
-Click empty space or the inner ruler to position playback. Dragging the ruler still pans; clicking notes selects/auditions them. Revision 31 maps source seconds through warp/crop/loop metadata to Live’s transport. While stopped it also sets the next playback start. Verified in Live with existing edits retained after device reload.
+Click empty space or the inner ruler to position playback. Dragging the ruler still pans; clicking notes selects/auditions them. Revision 31 maps source seconds through warp/crop/loop metadata to Live’s transport. While stopped it also sets the next playback start. Revision 41 snaps clicks before the playable clip start to that start (1.1.1 when the clip begins the track), with the cursor showing the resolved position. Verified in Live with existing edits retained after device reload.
 
 ### Edit retention
 

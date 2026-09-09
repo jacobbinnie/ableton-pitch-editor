@@ -66,9 +66,9 @@ static void drawTab(NSString *title,NSRect rect,BOOL selected){
     NSSize text=[title sizeWithAttributes:attrs];
     [title drawAtPoint:NSMakePoint(round(NSMidX(rect)-text.width/2),round(NSMidY(rect)-text.height/2)) withAttributes:attrs];
 }
-@interface PitchTabButton40 : NSButton
+@interface PitchTabButton41 : NSButton
 @end
-@implementation PitchTabButton40
+@implementation PitchTabButton41
 - (void)drawRect:(NSRect)rect {drawTab(self.title,self.bounds,self.state==NSControlStateValueOn);}
 - (void)setState:(NSControlStateValue)value {[super setState:value];self.needsDisplay=YES;}
 @end
@@ -161,12 +161,12 @@ static void closePitch(){
     log(@"Pitch mode closed");
 }
 static void tick();
-@interface PitchNativeActions40 : NSObject
+@interface PitchNativeActions41 : NSObject
 - (void)toggle:(id)sender;
 - (void)openPitch;
 @end
-static PitchNativeActions40 *actions;
-@implementation PitchNativeActions40
+static PitchNativeActions41 *actions;
+@implementation PitchNativeActions41
 - (void)toggle:(id)sender {
     (void)sender;
     if(pitchMode){closePitch();return;}
@@ -252,7 +252,7 @@ static void tick(){
             NSSize size=sizeOf(button);tabHost=makeHost(button,size.width,size.height);
             NSView *container=nativeView(tabHost);
             if(container){
-                tabButton=[PitchTabButton40 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
+                tabButton=[PitchTabButton41 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
                 tabButton.frame=container.bounds;tabButton.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
                 tabButton.bordered=NO;tabButton.buttonType=NSButtonTypePushOnPushOff;
                 tabButton.font=tabFont();
@@ -389,7 +389,11 @@ static void readAudio(NativeObject *x,t_symbol*,long argc,t_atom *argv){
                         t_atom value;atom_setfloat(&value,*beat);
                         outlet_anything(x->playOutlet,gensym("seek"),1,&value);
                         if(!x->songPlaying)outlet_anything(x->playOutlet,gensym("seekstart"),1,&value);
-                        [weakCanvas setPlayheadSeconds:seconds playing:x->songPlaying valid:YES];
+                        double sourcePosition=x->startMarker+*beat-x->clipStart;
+                        if(x->looping&&x->loopEnd>x->loopStart&&sourcePosition>=x->loopEnd)sourcePosition=x->loopStart+std::fmod(sourcePosition-x->loopStart,x->loopEnd-x->loopStart);
+                        auto actual=pitch::sourceTime(sourcePosition,true,warpPoints);
+                        if(actual)[weakCanvas setPlayheadSeconds:*actual playing:x->songPlaying valid:YES];
+                        [weakCanvas setAudioStatus:@"Live pitch editing" ready:NO];
                     };
                     target.documentCommitted=^(std::shared_ptr<pitch::Document> document){if(sourceHash)[documentStore save:document identity:identity sourceHash:sourceHash];};
                     target.noteAudition=^(pitch::Note note,BOOL finished){if(finished)[weakSession finishAudition];else [weakSession auditionNote:note];};
@@ -418,7 +422,7 @@ static void *create(){
         liveSessionIdentity=launch?[NSString stringWithFormat:@"%d-%.6f",NSProcessInfo.processInfo.processIdentifier,launch.timeIntervalSince1970]:NSUUID.UUID.UUIDString;
         documentStore=[[PitchDocumentStore alloc] initWithDirectory:@PITCH_STATE_DIRECTORY];
         documentStore.saveFailed=^(NSString *message){[canvas setAudioStatus:message ready:NO];log(message);};
-        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions40 new];
+        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions41 new];
         timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer*){tick();}];
         playTimer=[NSTimer scheduledTimerWithTimeInterval:1.0/30 repeats:YES block:^(NSTimer*){if(instance)qelem_set(instance->playRequest);}];
         eventMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown|NSEventMaskKeyDown|NSEventMaskScrollWheel|NSEventMaskMagnify) handler:^NSEvent*(NSEvent *e){
@@ -453,7 +457,7 @@ static void *create(){
     });return x;
 }
 extern "C" C74_EXPORT void ext_main(void*){
-    klass=class_new("pitchnative40",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
+    klass=class_new("pitchnative41",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
     class_addmethod(klass,(method)configureDSP,"dsp64",A_CANT,0);
     class_addmethod(klass,(method)hostBeat,"hostbeat",A_FLOAT,0);
     class_addmethod(klass,(method)hostTempo,"hosttempo",A_FLOAT,0);

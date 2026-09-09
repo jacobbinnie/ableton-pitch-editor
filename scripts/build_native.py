@@ -8,7 +8,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 out = root / 'build'
-external = 'pitchnative40'
+external = 'pitchnative41'
 import hashlib
 assert hashlib.sha256((root/'build/Ableton Pitch Lab.app/Contents/MacOS/Live').read_bytes()).hexdigest() == 'fca7d75481af0b561a51fdece48bc1fbd50c0e2c6ad04f34c6f794173be75d47', 'Unsupported executable'
 contents = out / (external+'.mxo') / 'Contents'
@@ -21,8 +21,8 @@ rb = root/'vendor/rubberband-4.0.0'
 assert (rb/'single/RubberBandSingle.cpp').exists(), 'Run scripts/fetch_rubberband.py first'
 subprocess.run(['xcrun','clang++','-std=c++17','-O2','-arch','arm64','-c',str(rb/'single/RubberBandSingle.cpp'),'-o',str(out/'rubberband-native.o')],check=True)
 subprocess.run(['xcrun', 'clang++', '-std=c++17', '-O2', '-bundle' , '-arch', 'arm64', '-fobjc-arc',
-    '-DPitchCanvas=PitchCanvas40', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-cast-function-type-mismatch',
-    '-DPitchRenderSession=PitchRenderSession40', '-DPitchDocumentStore=PitchDocumentStore40',
+    '-DPitchCanvas=PitchCanvas41', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-cast-function-type-mismatch',
+    '-DPitchRenderSession=PitchRenderSession41', '-DPitchDocumentStore=PitchDocumentStore41',
     '-DPITCH_STATE_DIRECTORY='+json.dumps(str(root/'.pitch-state')),
 
     '-I'+str(rb),

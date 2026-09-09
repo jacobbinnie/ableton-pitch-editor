@@ -53,7 +53,7 @@ Verified: model tests for invalid splits, IDs, centers, retained offsets, join r
 
 Empty plot clicks and clicks on the inner seconds ruler request a Live transport seek. Ruler movement beyond three points remains pan; note clicks only select/audition. Stopped cursor painting now follows host position instead of updating only while playing.
 
-Source seconds are inverted through the warp map, then mapped through Arrangement start/start-marker and clip-loop metadata. Loop targets choose the nearest valid occurrence inside the Arrangement clip. Positions outside the clip's playable range are rejected. Only the existing supported warped Arrangement path is implemented.
+Source seconds are inverted through the warp map, then mapped through Arrangement start/start-marker and clip-loop metadata. Loop targets choose the nearest valid occurrence inside the Arrangement clip. Revision 41 clamps positions before the playable start to the clip start; positions at or beyond the end remain rejected. Only the existing supported warped Arrangement path is implemented.
 
 The patch routes `seek` to [Song.current_song_time](https://docs.cycling74.com/apiref/lom/song/) and, while stopped, `seekstart` to Song.start_time. It does not start playback, change recording, or rewrite clip markers. Unit tests cover inverse warp mapping, crop bounds, loop occurrences, invalid maps and empty-space/ruler/note gesture distinctions.
 
@@ -134,3 +134,9 @@ Pinned R3 applies explicit formant envelope scaling before pitch resampling. Use
 Validation: synthetic harmonic vowel envelopes centered at 1,000 Hz, at 44.1/48 kHz, with pitch 0/+3 semitones and formant −3/0/+3, moved the measured envelope in the expected direction while retaining the expected fundamental period. Neutral tone stayed within 31 Hz of the original center in these cases. The test also covers linked stereo, finite output, region mapping/coalescing, invalid values and history. AppKit gesture/reset/undo, schema-4 migration/schema-5 rejection and all existing expression/gain/pitch tests pass. Spectral centroids are fixture-level evidence, not estimates of individual human formants or a listening-quality guarantee.
 
 Live checks: loaded revision 40 with prior edits retained; lower-right handle changed formant to +1.55 while stopped and −1.42 while playing without changing pitch/gain/vibrato/drift. Undo restored neutral. Post-test recovery comparison preserved all previous fields within 1e-12. Real-vocal timbre quality, extreme ratios and exact boundary scheduling still need wider validation.
+
+## Revision 41 — seek before clip start
+
+Clicks in cropped source lead-in clamp to the Arrangement clip start after resolving valid loop occurrences. The canvas immediately displays the resolved source position, and successful seeks clear a previous range error. Valid silence inside the clip remains freely seekable.
+
+Playback regression tests and the native build pass. Verified in Live: clicking the empty lead-in moved transport to 1.1.1 and the canvas cursor to 0.86 source seconds, matching the cropped start marker.

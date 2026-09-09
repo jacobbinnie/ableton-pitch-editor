@@ -26,7 +26,10 @@ inline std::optional<double> seekBeat(double seconds,const std::vector<WarpPoint
    target+=std::clamp(std::round((current-target)/length),first,last)*length;
   }else if(*beat>=loopEnd)return {};
  }
- if(target<start||target>=end||target<0)return {};
+ // A click in the cropped lead-in seeks to the clip start, never before it.
+ // Resolve valid loop occurrences first so repeated source positions still work.
+ target=std::max(target,start);
+ if(target>=end||target<0)return {};
  return target;
 }
 inline std::optional<double> sourceTime(double position,bool warped,const std::vector<WarpPoint>& points){
