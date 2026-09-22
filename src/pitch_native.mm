@@ -66,9 +66,9 @@ static void drawTab(NSString *title,NSRect rect,BOOL selected){
     NSSize text=[title sizeWithAttributes:attrs];
     [title drawAtPoint:NSMakePoint(round(NSMidX(rect)-text.width/2),round(NSMidY(rect)-text.height/2)) withAttributes:attrs];
 }
-@interface PitchTabButton41 : NSButton
+@interface PitchTabButton42 : NSButton
 @end
-@implementation PitchTabButton41
+@implementation PitchTabButton42
 - (void)drawRect:(NSRect)rect {drawTab(self.title,self.bounds,self.state==NSControlStateValueOn);}
 - (void)setState:(NSControlStateValue)value {[super setState:value];self.needsDisplay=YES;}
 @end
@@ -160,13 +160,16 @@ static void closePitch(){
     tabButton.state=NSControlStateValueOff;
     log(@"Pitch mode closed");
 }
+static void detachTab(){
+    [tabButton removeFromSuperview];tabButton=nil;releaseHost(&tabHost);buttonOwner=0;tabFrame=NSZeroRect;
+}
 static void tick();
-@interface PitchNativeActions41 : NSObject
+@interface PitchNativeActions42 : NSObject
 - (void)toggle:(id)sender;
 - (void)openPitch;
 @end
-static PitchNativeActions41 *actions;
-@implementation PitchNativeActions41
+static PitchNativeActions42 *actions;
+@implementation PitchNativeActions42
 - (void)toggle:(id)sender {
     (void)sender;
     if(pitchMode){closePitch();return;}
@@ -242,17 +245,19 @@ static void scan(id node,int depth,int *budget,uintptr_t *editor,uintptr_t *butt
 static void tick(){
     uintptr_t editor=0,button=0;NSRect frame=NSZeroRect;
     for(NSWindow *w in NSApp.windows){int budget=5000;scan(w,0,&budget,&editor,&button,&frame);}
-    if(!tableIs(editor,0x106b4d2a0)){if(pitchMode)closePitch();selectedEditor=0;return;}
+    if(!tableIs(editor,0x106b4d2a0)){if(pitchMode)closePitch();detachTab();selectedEditor=0;return;}
     uintptr_t clip=word(editor+0x390);
     if(editor!=selectedEditor||clip!=selectedClip){if(pitchMode)closePitch();[renderSession invalidate];renderSession=nil;canvas=nil;analyzed=false;selectedEditor=editor;selectedClip=clip;}
     tabFrame=frame;
-    if(button&&button!=buttonOwner){
-        [tabButton removeFromSuperview];tabButton=nil;releaseHost(&tabHost);buttonOwner=button;
+    NSView *tabContainer=nativeView(tabHost);
+    if(!button){detachTab();}
+    if(button&&(button!=buttonOwner||!tabContainer||tabButton.superview!=tabContainer)){
+        detachTab();tabFrame=frame;buttonOwner=button;
         if([type(button) isEqual:@"20AButtonControlSimple"]){
             NSSize size=sizeOf(button);tabHost=makeHost(button,size.width,size.height);
             NSView *container=nativeView(tabHost);
             if(container){
-                tabButton=[PitchTabButton41 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
+                tabButton=[PitchTabButton42 buttonWithTitle:@"Pitch Editor" target:actions action:@selector(toggle:)];
                 tabButton.frame=container.bounds;tabButton.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
                 tabButton.bordered=NO;tabButton.buttonType=NSButtonTypePushOnPushOff;
                 tabButton.font=tabFont();
@@ -422,7 +427,7 @@ static void *create(){
         liveSessionIdentity=launch?[NSString stringWithFormat:@"%d-%.6f",NSProcessInfo.processInfo.processIdentifier,launch.timeIntervalSince1970]:NSUUID.UUID.UUIDString;
         documentStore=[[PitchDocumentStore alloc] initWithDirectory:@PITCH_STATE_DIRECTORY];
         documentStore.saveFailed=^(NSString *message){[canvas setAudioStatus:message ready:NO];log(message);};
-        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions41 new];
+        slide=_dyld_get_image_vmaddr_slide(0);actions=[PitchNativeActions42 new];
         timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer*){tick();}];
         playTimer=[NSTimer scheduledTimerWithTimeInterval:1.0/30 repeats:YES block:^(NSTimer*){if(instance)qelem_set(instance->playRequest);}];
         eventMonitor=[NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown|NSEventMaskKeyDown|NSEventMaskScrollWheel|NSEventMaskMagnify) handler:^NSEvent*(NSEvent *e){
@@ -457,7 +462,7 @@ static void *create(){
     });return x;
 }
 extern "C" C74_EXPORT void ext_main(void*){
-    klass=class_new("pitchnative41",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
+    klass=class_new("pitchnative42",(method)create,(method)dispose,sizeof(NativeObject),nullptr,0);
     class_addmethod(klass,(method)configureDSP,"dsp64",A_CANT,0);
     class_addmethod(klass,(method)hostBeat,"hostbeat",A_FLOAT,0);
     class_addmethod(klass,(method)hostTempo,"hosttempo",A_FLOAT,0);

@@ -10,7 +10,9 @@ See [live audio behavior and limitations](docs/live-audio.md).
 
 See [audio renderer build, usage and validation](docs/audio-renderer.md) and [the engine implementation plan](docs/audio-engine-plan.md).
 
-Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative41.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
+The native adapter targets the fingerprinted Live 12.4.5 arm64 build. The local app was observed at 12.4.6 on 2026-09-22, so native rebuilding currently stops at the compatibility guard until its private interfaces are revalidated. The standalone editor tests remain independent of that app version.
+
+Build with `python3 scripts/build_native.py`. In `build/Ableton Pitch Lab.app`, load `build/Native Pitch Editor.amxd` on the test audio track, keeping `pitchnative42.mxo` alongside it. Double-click a warped audio clip, then click **Pitch Editor** in its header. Left/right select notes, up/down transpose, and ⌘Z / ⇧⌘Z undo/redo while the pitch canvas has focus. The source file is analyzed automatically (mono/stereo, 8–48 kHz, at most 60 seconds).
 
 The adapter creates `APlatformViewHost` children inside the existing native tab button and `LWarpedAudioTimelineEditor`. Live supplies actual `TPlatformViewContainer` surfaces for an AppKit toggle and pitch canvas. It does not create a floating window or position an unrelated NSView over the main app. The mode is local to this experimental adapter; Live's internal three-mode enum is unchanged. A Max device provides the loader and selected-clip file lookup.
 
