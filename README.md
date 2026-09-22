@@ -8,6 +8,8 @@ Edit vocal notes directly in Ableton’s Clip View. Drag to change pitch, auditi
 
 ## Before you start
 
+**Experimental app modification:** Setup changes Ableton’s `GUI.alp` to add the tab, invalidating the app’s code-signing resource seal even if Live still launches. This is an unsupported prototype. Setup backs up the original resource; use the [removal instructions](#remove) to restore it.
+
 You need an **Apple Silicon Mac**, **Max for Live**, **Python 3.12+**, and **Xcode Command Line Tools** (`xcode-select --install`).
 
 Currently tested: **Live 12.4.5 Trial** (`2026-08-19_225ce5e356`) and **12.4.6 Trial** (`2026-09-10_0de5c8fa9a`). Trial is not inherently required, but paid editions are untested. Setup stops if your exact build is unsupported.
