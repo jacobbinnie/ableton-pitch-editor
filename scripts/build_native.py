@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the experimental native Clip View adapter and its Max loader."""
 from pathlib import Path
+import argparse
 import json
 import plistlib
 import struct
@@ -9,8 +10,16 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 out = root / 'build'
 external = 'pitchnative42'
-import hashlib
-assert hashlib.sha256((root/'build/Ableton Pitch Lab.app/Contents/MacOS/Live').read_bytes()).hexdigest() == 'fca7d75481af0b561a51fdece48bc1fbd50c0e2c6ad04f34c6f794173be75d47', 'Unsupported executable'
+from live_compat import identify
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--live-app', type=Path, default=root/'build/Ableton Pitch Lab.app',
+                    help='Exact app the adapter may attach to (default: experimental copy)')
+args = parser.parse_args()
+profile = identify(args.live_app)
+print('Building native adapter for Live', profile['label'], flush=True)
+profile_flags = ['-DPITCH_LIVE_SHA256='+json.dumps(profile['sha256'])]
+for key in ['selector_background', 'selector_text', 'selector_release']:
+    profile_flags.append('-DPITCH_'+key.upper()+'='+hex(profile[key]))
 contents = out / (external+'.mxo') / 'Contents'
 (contents / 'MacOS').mkdir(parents=True, exist_ok=True)
 (contents / 'Info.plist').write_bytes(plistlib.dumps({
@@ -20,14 +29,14 @@ contents = out / (external+'.mxo') / 'Contents'
 rb = root/'vendor/rubberband-4.0.0'
 assert (rb/'single/RubberBandSingle.cpp').exists(), 'Run scripts/fetch_rubberband.py first'
 subprocess.run(['xcrun','clang++','-std=c++17','-O2','-arch','arm64','-c',str(rb/'single/RubberBandSingle.cpp'),'-o',str(out/'rubberband-native.o')],check=True)
-subprocess.run(['xcrun', 'clang++', '-std=c++17', '-O2', '-bundle' , '-arch', 'arm64', '-fobjc-arc',
+subprocess.run(['xcrun', 'clang++', *profile_flags, '-std=c++17', '-O2', '-bundle' , '-arch', 'arm64', '-fobjc-arc',
     '-DPitchCanvas=PitchCanvas42', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-cast-function-type-mismatch',
     '-DPitchRenderSession=PitchRenderSession42', '-DPitchDocumentStore=PitchDocumentStore42',
     '-DPITCH_STATE_DIRECTORY='+json.dumps(str(root/'.pitch-state')),
 
     '-I'+str(rb),
     '-DPITCH_NATIVE_LOG='+json.dumps(str(root/'native.log')),
-    '-DPITCH_LIVE_COPY='+json.dumps(str(root/'build/Ableton Pitch Lab.app')),
+    '-DPITCH_LIVE_COPY='+json.dumps(str(profile['app'])),
     '-I'+str(root/'vendor/max-sdk-base/c74support/max-includes'),
     '-I'+str(root/'vendor/max-sdk-base/c74support/msp-includes'),
     '-framework', 'AVFoundation', '-framework', 'Cocoa', '-framework', 'CoreText', '-framework', 'Accelerate', '-undefined', 'dynamic_lookup',

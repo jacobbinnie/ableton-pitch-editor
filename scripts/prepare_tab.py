@@ -6,17 +6,17 @@ GUI.alp's ClipContentHeader.xml entry changes. Executable code stays untouched.
 Proprietary resources remain in ignored build/ and must not be distributed.
 """
 from pathlib import Path
+import argparse
 import hashlib
 import json
 import struct
 import xml.etree.ElementTree as ET
 
 from macho_read import Image
+from live_compat import discover, identify
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path('/Applications/Ableton Live 12 Trial.app')
 COPY = ROOT / 'build/Ableton Pitch Lab.app'
-EXPECTED = 'fca7d75481af0b561a51fdece48bc1fbd50c0e2c6ad04f34c6f794173be75d47'
 
 
 def scramble(data, key):
@@ -28,14 +28,16 @@ def scramble(data, key):
     return bytes(result)
 
 
-def prepare():
-    executable = SOURCE / 'Contents/MacOS/Live'
-    assert hashlib.sha256(executable.read_bytes()).hexdigest() == EXPECTED, 'Unsupported Live version'
-    assert COPY.is_dir() and COPY.resolve() != SOURCE.resolve(), 'Create the disposable copy first'
-    assert hashlib.sha256((COPY / 'Contents/MacOS/Live').read_bytes()).hexdigest() == EXPECTED
+def prepare(source=None):
+    profile = discover(source)
+    source = profile['app']
+    executable = profile['executable']
+    print('Detected Live', profile['label'])
+    assert COPY.is_dir() and COPY.resolve() != source.resolve(), 'Create the disposable copy first'
+    assert identify(COPY)['sha256'] == profile['sha256'], 'Experimental copy differs from selected Live installation'
     resource = Path('Contents/App-Resources/GUI.alp')
-    original = (SOURCE / resource).read_bytes()
-    base = Image(executable).read(0x10590f71f, 32)
+    original = (source / resource).read_bytes()
+    base = Image(executable).read(profile['resource_table'], 32)
     key = scramble(base, b'GUI.alp')
     decoded = scramble(original, key)
     assert decoded[:4] == b'pl-a'
@@ -50,6 +52,8 @@ def prepare():
     offset, length = struct.unpack_from('<QQ', decoded, entry)
     xml = decoded[offset:offset + length]
     tree = ET.fromstring(xml)
+    if any(node.get('Value') == 'PitchEditorButton' for node in tree.iter('StringProperty')):
+        raise ValueError('Selected source app already has Pitch Editor installed. Restore its original GUI.alp backup before preparing another copy.')
     selectors = [n for n in tree.iter('PropertiesNode')
                  if n.find('./Categories/PropertiesCategory/Properties/StringProperty[@Name="ViewId"]') is not None
                  and n.find('./Categories/PropertiesCategory/Properties/StringProperty[@Name="ViewId"]').get('Value') == 'EditorViewModeSelector']
@@ -64,7 +68,7 @@ def prepare():
           <LocalizedStringProperty Name="Text" Value="Pitch Editor" />
           <LocalizedStringProperty Name="AxName" Value="Pitch Editor" />
           <LocalizedStringProperty Name="InfoTextHeader" Value="Pitch Editor" />
-          <LocalizedStringProperty Name="InfoText" Value="Experimental native tab. Pitch processing is not connected yet." />
+          <LocalizedStringProperty Name="InfoText" Value="Open the experimental Pitch Editor. Requires the matching Native Pitch Editor device." />
           <ViewExpressionProperty Name="ShowWhen" Value="ContentEditEnabled" />
           <EnumProperty Name="SelectionBehavior" Value="1" />
           <ColorNameProperty Name="ContrastFrameColor" ColorName="SurfaceBackground" />
@@ -114,8 +118,10 @@ def prepare():
     out.mkdir(parents=True, exist_ok=True)
     (out / 'ClipContentHeader.original.xml').write_bytes(xml)
     (out / 'ClipContentHeader.pitch.xml').write_bytes(modified)
-    (COPY / resource).write_bytes(encoded)
-    manifest = {'source_executable_sha256': EXPECTED,
+    temporary = COPY / resource.with_suffix('.alp.tmp')
+    temporary.write_bytes(encoded)
+    temporary.replace(COPY / resource)
+    manifest = {'source_executable_sha256': profile['sha256'], 'live_version': profile['label'],
                 'source_gui_sha256': hashlib.sha256(original).hexdigest(),
                 'modified_gui_sha256': hashlib.sha256(encoded).hexdigest(),
                 'resource': 'ClipContentHeader.xml', 'original_offset': offset,
@@ -127,4 +133,7 @@ def prepare():
 
 
 if __name__ == '__main__':
-    prepare()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--live', type=Path)
+    args = parser.parse_args()
+    prepare(args.live)

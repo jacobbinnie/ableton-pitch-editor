@@ -152,11 +152,11 @@ static void closePitch(){
     // A retained native reference remains valid through header teardown.
     uintptr_t selector=(uintptr_t)selectorOwner;
     if(selectorColorsOverridden&&[type(selector) isEqual:@"18AModeSwitchControl"]){
-        ((void(*)(void*,uint32_t))(slide+0x10358ca48))((void*)selector,savedSelectedBackground);
-        ((void(*)(void*,uint32_t))(slide+0x10358ca78))((void*)selector,savedSelectedText);
+        ((void(*)(void*,uint32_t))(slide+PITCH_SELECTOR_BACKGROUND))((void*)selector,savedSelectedBackground);
+        ((void(*)(void*,uint32_t))(slide+PITCH_SELECTOR_TEXT))((void*)selector,savedSelectedText);
     }
     selectorColorsOverridden=false;
-    if(selectorOwner){((void(*)(void**))(slide+0x10358bc80))(&selectorOwner);selectorOwner=nullptr;}
+    if(selectorOwner){((void(*)(void**))(slide+PITCH_SELECTOR_RELEASE))(&selectorOwner);selectorOwner=nullptr;}
     tabButton.state=NSControlStateValueOff;
     log(@"Pitch mode closed");
 }
@@ -214,8 +214,8 @@ static PitchNativeActions42 *actions;
             // Keep Live's own font, layout, antialiasing and theme renderer.
             savedSelectedBackground=(uint32_t)word(selector+0x32c);
             savedSelectedText=(uint32_t)word(selector+0x334);
-            ((void(*)(void*,uint32_t))(slide+0x10358ca48))((void*)selector,(uint32_t)word(selector+0x330));
-            ((void(*)(void*,uint32_t))(slide+0x10358ca78))((void*)selector,(uint32_t)word(selector+0x338));
+            ((void(*)(void*,uint32_t))(slide+PITCH_SELECTOR_BACKGROUND))((void*)selector,(uint32_t)word(selector+0x330));
+            ((void(*)(void*,uint32_t))(slide+PITCH_SELECTOR_TEXT))((void*)selector,(uint32_t)word(selector+0x338));
             selectorColorsOverridden=true;
             log(@"Native selector colors overridden; original lettering preserved");
         }
@@ -423,6 +423,13 @@ static void *create(){
     if(instance)return x;instance=x;
     dispatch_async(dispatch_get_main_queue(),^{
         if(instance!=x||![NSBundle.mainBundle.bundlePath isEqual:@PITCH_LIVE_COPY])return;
+        NSData *executable=[NSData dataWithContentsOfFile:NSBundle.mainBundle.executablePath options:NSDataReadingMappedIfSafe error:nil];
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        if(!executable||executable.length>UINT32_MAX){log(@"Native adapter refused: executable unavailable");return;}
+        CC_SHA256(executable.bytes,(CC_LONG)executable.length,digest);
+        NSMutableString *fingerprint=[NSMutableString string];
+        for(unsigned char byte:digest)[fingerprint appendFormat:@"%02x",byte];
+        if(![fingerprint isEqualToString:@PITCH_LIVE_SHA256]){log(@"Native adapter refused: executable changed; rerun setup");return;}
         NSDate *launch=NSRunningApplication.currentApplication.launchDate;
         liveSessionIdentity=launch?[NSString stringWithFormat:@"%d-%.6f",NSProcessInfo.processInfo.processIdentifier,launch.timeIntervalSince1970]:NSUUID.UUID.UUIDString;
         documentStore=[[PitchDocumentStore alloc] initWithDirectory:@PITCH_STATE_DIRECTORY];

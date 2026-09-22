@@ -83,3 +83,9 @@ Non-obvious integration constraints for the local Live pitch demo.
 - Revision 41 seek clamping operates on the Arrangement target after loop occurrence selection. A clip starting at Arrangement beat zero may have a nonzero source start marker; paint the resolved target mapped back through warp/loop metadata, not the raw clicked seconds. Preserve seekable silence inside the playable range rather than snapping to the first detected note.
 
 - Revision 42 clears the tab host and cached button owner when the audio editor disappears, and retries attachment if the host/view is missing. Native owner pointer equality alone is not sufficient evidence that a hosted button survived Clip View teardown. Build passed; live close/reopen validation remains pending.
+
+- The compatibility roadmap in `docs/compatibility-plan.md` is proposed, not implemented. The old `pitch_clip.mm` device is pass-through and the standalone lab is not a live-audio fallback; extract the shared host controller/DSP from `pitch_native.mm` before claiming a version-independent editor. Native adapters remain fingerprint-bound even when symbols resolve dynamically.
+
+- Compatibility plan review: prototype Set persistence and clip rebinding before choosing the controller schema. Supported Max device-state storage does not imply durable Live clip IDs or a place to attach arbitrary editor UUIDs; ambiguous matches must stay inactive. Selection-independent processing belongs in the initial audible editor, not a later native-adapter milestone.
+
+- Native compatibility profiles now live in `scripts/live_compat.py`; setup and build select by executable SHA-256, with version metadata checked for consistency. The compiled adapter also verifies its host executable fingerprint before mounting private views. Profile selection does not establish arbitrary-version support; new fingerprints still require address/layout validation.
