@@ -28,15 +28,17 @@ def scramble(data, key):
     return bytes(result)
 
 
-def prepare(source=None):
+def prepare(source=None, *, original=None, write=True):
     profile = discover(source)
     source = profile['app']
     executable = profile['executable']
     print('Detected Live', profile['label'])
-    assert COPY.is_dir() and COPY.resolve() != source.resolve(), 'Create the disposable copy first'
-    assert identify(COPY)['sha256'] == profile['sha256'], 'Experimental copy differs from selected Live installation'
+    if write:
+        assert COPY.is_dir() and COPY.resolve() != source.resolve(), 'Create the disposable copy first'
+        assert identify(COPY)['sha256'] == profile['sha256'], 'Experimental copy differs from selected Live installation'
     resource = Path('Contents/App-Resources/GUI.alp')
-    original = (source / resource).read_bytes()
+    if original is None:
+        original = (source / resource).read_bytes()
     base = Image(executable).read(profile['resource_table'], 32)
     key = scramble(base, b'GUI.alp')
     decoded = scramble(original, key)
@@ -114,6 +116,8 @@ def prepare(source=None):
     ET.fromstring(new[directory:directory + len(modified)])
     encoded = scramble(new, key)
     assert scramble(encoded, key) == new
+    if not write:
+        return bytes(encoded)
     out = ROOT / 'build/research'
     out.mkdir(parents=True, exist_ok=True)
     (out / 'ClipContentHeader.original.xml').write_bytes(xml)

@@ -1,65 +1,58 @@
 # Ableton Pitch Editor
 
-An experimental vocal pitch editor in Live’s audio Clip View. Drag detected notes to change pitch and hear edits during playback, without exporting.
+Edit vocal notes directly in Ableton’s Clip View. Drag to change pitch, audition notes, and adjust gain, vibrato, drift and formants.
 
 [Watch the demo](https://x.com/jacobbinnie/status/2102091733114745280)
 
-Pitch snapping, drag audition, per-note gain/vibrato/drift/formants, region editing, waveform display, zoom and local undo/redo are included.
+![Editable vocal notes in Ableton Live](docs/images/pitch-editor-preview.png)
 
-## Requirements
+## Before you start
 
-- Apple Silicon Mac, Python 3.12+, Git and Xcode Command Line Tools (`xcode-select --install`).
-- Max for Live available in your Live installation.
-- One of these exact Trial builds:
+You need an **Apple Silicon Mac**, **Max for Live**, **Python 3.12+**, and **Xcode Command Line Tools** (`xcode-select --install`).
 
-| Live | Build |
-| --- | --- |
-| 12.4.5 Trial | `2026-08-19_225ce5e356` |
-| 12.4.6 Trial | `2026-09-10_0de5c8fa9a` |
-
-Setup detects the installed build and checks its executable fingerprint. Other builds and paid editions are not yet validated. The 12.4.6 tab has been tested locally; broader audio and lifecycle testing is still needed.
+Currently tested: **Live 12.4.5 Trial** (`2026-08-19_225ce5e356`) and **12.4.6 Trial** (`2026-09-10_0de5c8fa9a`). Trial is not inherently required, but paid editions are untested. Setup stops if your exact build is unsupported.
 
 ## Install
 
-Close Live. These commands create a separate **Ableton Pitch Lab.app** using your installed Live app. The normal setup does not patch the app in `/Applications`.
+**Close Ableton**, then paste this into Terminal. Setup backs up and patches your installed app.
 
 ```sh
-git clone https://github.com/jacobbinnie/ableton-pitch-editor.git
-cd ableton-pitch-editor
-python3 scripts/setup.py --check
-
-mkdir -p vendor build
-git clone https://github.com/Cycling74/max-sdk-base.git vendor/max-sdk-base
-git -C vendor/max-sdk-base checkout --detach c03a2922a2a8ff149165a1e2ea134e9321d6e202
-SSL_CERT_FILE=/etc/ssl/cert.pem python3 scripts/fetch_rubberband.py
-
+git clone https://github.com/jacobbinnie/ableton-pitch-editor.git &&
+cd ableton-pitch-editor &&
+python3 scripts/setup.py --check &&
+mkdir -p vendor build &&
+git clone https://github.com/Cycling74/max-sdk-base.git vendor/max-sdk-base &&
+git -C vendor/max-sdk-base checkout --detach c03a2922a2a8ff149165a1e2ea134e9321d6e202 &&
+SSL_CERT_FILE=/etc/ssl/cert.pem python3 scripts/fetch_rubberband.py &&
 python3 scripts/setup.py
-open 'build/Ableton Pitch Lab.app'
 ```
 
-If multiple Live apps are installed, add `--live "/path/to/Live.app"` to both setup commands. Start with an unmodified installation; setup rejects an already-patched source.
+Multiple Live installations? Add `--live "/path/to/Ableton Live.app"` to both setup commands. Setup needs write permission for that app.
 
-## Use
+## Open the editor
 
-1. Open **Ableton Pitch Lab.app**, then create a test Set.
-2. Add your vocal to an audio track in **Arrangement View** and enable **Warp**.
-3. Drag `build/Native Pitch Editor.amxd` onto the **same track**. Keep `build/pitchnative42.mxo` beside it.
-4. Double-click the audio clip and select **Pitch Editor** beside Sample and Envelopes.
-5. Drag notes to edit/audition. Shift-drag fine-tunes; ⌘Z / ⇧⌘Z undo/redo while the editor has focus.
+1. Reopen Ableton. Add a vocal to **Arrangement View** and turn on **Warp**.
+2. Drag `build/Native Pitch Editor.amxd` onto the **same track**. Leave `pitchnative42.mxo` beside the device file.
+3. Double-click the vocal clip, then click **Pitch Editor** beside Sample and Envelopes.
 
-Keep the device on the track. Supported audio: mono/stereo, 8–48 kHz, up to 60 seconds. Session clips and unwarped playback are unsupported.
+Drag notes to edit or audition. Shift-drag fine-tunes. ⌘Z undoes edits while the editor has focus.
 
-## If the tab is missing
+**Missing tab?** Open the app selected by setup. **Disabled tab?** Load the device on the vocal’s track.
 
-- **No tab:** check you opened the patched app. Installing the device alone does not add the tab.
-- **Tab is disabled:** load the matching `.amxd` and `.mxo` on the vocal track.
-- **Moved the repo:** close Live and rebuild with `python3 scripts/build_native.py`.
-- **Manually patched the installed Trial app:** rebuild with `python3 scripts/build_native.py --live-app '/Applications/Ableton Live 12 Trial.app'`, then open that app and load the rebuilt device. This command targets an existing patch; it does not install the tab resource. Default setup uses the separate copy.
+## Remove
+
+Close Ableton and run this from the repo folder:
+
+```sh
+python3 scripts/setup.py --restore
+```
+
+Use the same `--live` option if needed, then remove the device from your tracks.
 
 ## Limitations
 
-**Edits are not saved in Live Sets or reliably restored after restarting Live.** Recovery is limited to the same Live session. The editor uses private Live interfaces, so Live updates may require a new compatibility profile. The experimental copy shares Live’s preferences and authorization; demo mode still disables saving/exporting.
+Experimental. **Edits do not reliably survive restarting Live and are not saved in your Set.** Use test projects. Supports warped Arrangement audio only: mono/stereo, 8–48 kHz, up to 60 seconds. Live updates may need a new compatibility profile; authorization is unchanged.
 
-[Audio behavior](docs/live-audio.md) · [Edit recovery](docs/edit-retention.md) · [Native integration](docs/native-tab-working.md)
+[Technical details](docs/live-audio.md) · [Edit recovery](docs/edit-retention.md)
 
-Unofficial and not affiliated with Ableton. No project-wide license has been selected; Rubber Band and the Max SDK retain their own licenses. Review these before redistribution. Ableton app files and test recordings are not included.
+Unofficial; not affiliated with Ableton. No project-wide license selected. Rubber Band and Max SDK retain their own licenses. Ableton app files and recordings are not included.
