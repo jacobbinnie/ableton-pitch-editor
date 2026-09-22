@@ -18,6 +18,7 @@ An experimental vocal pitch editor inside Ableton Live’s audio Clip View. Edit
 **This is a developer prototype, not a drop-in device for every Live version.** The native tab uses private Live interfaces and a modified resource in a separate app copy.
 
 - **Validated target:** Apple Silicon Mac, Live **12.4.5 Trial**, build `2026-08-19_225ce5e356`. Setup checks the exact executable fingerprint; other editions are not automatically compatible.
+- **Paid Suite / Standard:** not yet validated. Matching the version number alone is insufficient; a different executable is rejected by the fingerprint check. Supporting another edition requires validating its private interfaces, not just changing the app path. The integration does not inherently require a trial license.
 - **Live 12.4.6 and other builds:** unsupported until their private interfaces are revalidated. Do not bypass the fingerprint check. Updating Live may break the integration.
 - **Required:** Max for Live availability, Python 3.12+ and Xcode Command Line Tools (`xcode-select --install`).
 - **Audio:** warped Arrangement clips on the device’s track; mono/stereo, 8–48 kHz, up to 60 seconds. Session View and unwarped playback are not supported.
